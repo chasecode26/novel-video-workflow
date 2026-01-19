@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	api_pkg "novel-video-workflow/pkg/api"
 	mcp_pkg "novel-video-workflow/pkg/mcp"
 	"novel-video-workflow/pkg/tools/drawthings"
 	workflow_pkg "novel-video-workflow/pkg/workflow"
@@ -155,8 +156,36 @@ func getToolDescription(toolName string) string {
 
 // Gin路由处理函数
 func homePage(c *gin.Context) {
-	tmpl := template.Must(template.ParseFiles("./templates/index.html"))
-	tmpl.Execute(c.Writer, nil)
+	// 获取项目根目录 - 使用固定路径方式
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Printf("无法获取当前工作目录: %v", err)
+		c.String(http.StatusInternalServerError, "服务器内部错误")
+		return
+	}
+
+	// 检查当前工作目录是否包含templates目录
+	templatePath := filepath.Join(wd, "templates", "index.html")
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		// 如果当前工作目录下没有，尝试上两级目录（项目根目录）
+		projectRoot := filepath.Dir(filepath.Dir(wd))
+		templatePath = filepath.Join(projectRoot, "templates", "index.html")
+
+		if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+			log.Printf("模板文件不存在: %s", templatePath)
+			c.String(http.StatusInternalServerError, "模板文件不存在")
+			return
+		}
+	}
+
+	// 使用template.Must安全地解析模板
+	tmpl := template.Must(template.New("index.html").ParseFiles(templatePath))
+
+	if err := tmpl.Execute(c.Writer, nil); err != nil {
+		log.Printf("执行模板失败: %v", err)
+		c.String(http.StatusInternalServerError, "模板执行失败")
+		return
+	}
 }
 
 func wsEndpoint(c *gin.Context) {
@@ -1053,6 +1082,37 @@ func webServerMain() {
 	r.POST("/api/one-click-film", oneClickFilmHandler)
 	// 添加CapCut项目生成API端点
 	r.GET("/api/capcut-project", capcutProjectHandler)
+
+	// 添加项目管理API端点
+	if mcpServerInstance == nil {
+		log.Fatal("MCP服务器实例未初始化，无法启动Web服务器")
+	}
+	projectAPI := api_pkg.NewProjectAPI(mcpServerInstance.GetProcessor())
+	// 项目相关路由 - 首先定义最具体的路由
+	r.GET("/api/projects", projectAPI.GetAllProjects) // 获取所有项目
+	r.POST("/api/projects", projectAPI.CreateProject)
+	r.GET("/api/projects/name/:name", projectAPI.GetProjectByName) // 通过名称获取项目 - 更具体的路径
+	r.GET("/api/projects/:projectId", projectAPI.GetProjectByID)   // 获取特定项目 - 使用不同参数名避免冲突
+	r.PUT("/api/projects/:projectId", projectAPI.UpdateProject)
+	r.DELETE("/api/projects/:projectId", projectAPI.DeleteProject)
+	r.POST("/api/projects/:projectId/validate-password", projectAPI.ValidateProjectPassword)
+
+	// 章节相关路由 - 使用与前端匹配的路径，但避免参数名冲突
+	r.POST("/api/projects/:projectId/chapters", projectAPI.CreateChapter) // 修改路径与前端匹配
+	r.GET("/api/projects/:projectId/chapters", projectAPI.GetChaptersByProjectID)
+	r.GET("/api/chapters/:chapterId", projectAPI.GetChapterByID)
+	r.PUT("/api/chapters/:chapterId", projectAPI.UpdateChapter)
+	r.DELETE("/api/chapters/:chapterId", projectAPI.DeleteChapter)
+	r.POST("/api/chapters/:chapterId/share", projectAPI.ShareChapter)
+	r.POST("/api/chapters/:chapterId/unshare", projectAPI.UnshareChapter)
+
+	// 场景相关路由
+	r.POST("/api/chapters/:chapterId/scenes", projectAPI.CreateScene) // 修改路径与前端匹配
+	r.GET("/api/chapters/:chapterId/scenes", projectAPI.GetScenesByChapterID)
+	r.GET("/api/scenes/:sceneId", projectAPI.GetSceneByID)
+	r.PUT("/api/scenes/:sceneId", projectAPI.UpdateScene)
+	r.DELETE("/api/scenes/:sceneId", projectAPI.DeleteScene)
+
 	// 添加文件管理API端点
 	r.GET("/api/files/list", fileListHandler)
 	r.GET("/api/files/content", fileContentHandler)
@@ -1110,10 +1170,13 @@ type WorkflowProcessor struct {
 	drawThingsGen *drawthings.ChapterImageGenerator
 }
 
+var GlobalStyle = "悬疑惊悚风格，周围环境模糊成黑影, 空气凝滞,浅景深, 胶片颗粒感, 低饱和度，极致悬疑氛围, 阴沉窒息感, 夏季，环境阴霾，其他部分模糊不可见"
+var AdditionalPrompt = ", 周围环境模糊成黑影, 空气凝滞,浅景深, 胶片颗粒感, 低饱和度，极致悬疑氛围, 阴沉窒息感, 夏季，环境阴霾，其他部分模糊不可见"
+
 // generateImagesWithOllamaPrompts 使用Ollama优化的提示词生成图像
 func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir string, chapterNum int, audioDurationSecs int) error {
 	// 使用Ollama分析整个章节内容并生成分镜提示词
-	styleDesc := "悬疑惊悚风格，周围环境模糊成黑影, 空气凝滞,浅景深, 胶片颗粒感, 低饱和度，极致悬疑氛围, 阴沉窒息感, 夏季，环境阴霾，其他部分模糊不可见"
+	styleDesc := GlobalStyle
 
 	// 使用实际音频时长，如果未提供则估算
 	estimatedDurationSecs := audioDurationSecs
@@ -1126,7 +1189,7 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 	}
 
 	// 让Ollama分析整个章节并生成分镜
-	wp.logger.Info("开始Ollama分镜分析", zap.Int("chapter_num", chapterNum), zap.Int("content_length", len(content)), zap.Int("estimated_duration_secs", estimatedDurationSecs))
+	wp.logger.Info("📸开始Ollama分镜分析", zap.Int("chapter_num", chapterNum), zap.Int("content_length", len(content)), zap.Int("estimated_duration_secs", estimatedDurationSecs))
 	sceneDescriptions, err := wp.drawThingsGen.OllamaClient.AnalyzeScenesAndGeneratePrompts(content, styleDesc, estimatedDurationSecs)
 	if err != nil {
 		wp.logger.Warn("使用Ollama分析场景并生成分镜提示词失败",
@@ -1147,7 +1210,7 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 					zap.Int("paragraph_index", idx),
 					zap.String("paragraph", paragraph),
 					zap.Error(err))
-				optimizedPrompt = paragraph + ", 周围环境模糊成黑影, 空气凝滞,浅景深, 胶片颗粒感, 低饱和度，极致悬疑氛围, 阴沉窒息感, 夏季，环境阴霾，其他部分模糊不可见"
+				optimizedPrompt = paragraph + AdditionalPrompt
 			}
 
 			imageFile := filepath.Join(imagesDir, fmt.Sprintf("paragraph_%02d.png", idx+1))
@@ -1161,7 +1224,7 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 			)
 			if err != nil {
 				wp.logger.Warn("生成图像失败", zap.String("paragraph", paragraph[:min(len(paragraph), 50)]), zap.Error(err))
-				fmt.Printf("⚠️  段落图像生成失败: %v\n", err)
+				fmt.Printf("⚠️ 段落图像生成失败: %v\n", err)
 			} else {
 				fmt.Printf("✅ 段落图像生成完成: %s\n", imageFile)
 			}

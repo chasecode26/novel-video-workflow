@@ -315,6 +315,9 @@
                 <button class="nav-tab active px-8 py-4 font-semibold text-sm md:text-base text-white bg-white bg-opacity-30 hover:bg-white hover:bg-opacity-40 transition-colors future-glow" onclick="switchTab('dashboard')">
                     <i class="fas fa-film mr-2 text-lg"></i>仪表板
                 </button>
+                <button class="nav-tab px-8 py-4 font-semibold text-sm md:text-base text-gray-200 bg-transparent hover:bg-white hover:bg-opacity-30 transition-colors" onclick="switchTab('projects')">
+                    <i class="fas fa-book mr-2 text-lg"></i>项目管理
+                </button>
                 <button class="nav-tab px-8 py-4 font-semibold text-sm md:text-base text-gray-200 bg-transparent hover:bg-white hover:bg-opacity-30 transition-colors" onclick="switchTab('tools')">
                     <i class="fas fa-cogs mr-2 text-lg"></i>MCP 工具
                 </button>
@@ -336,14 +339,175 @@
                 <i class="fas fa-film mr-2 text-blue-300 text-xl"></i>工作流仪表板
             </h2>
             <div class="mb-4">
-                <p class="mb-3 text-base text-gray-200">当前状态: <span id="current-status" class="font-bold text-green-400">空闲</span></p>
+                <p class="mb-3 text-base text-gray-200">使用说明:
+                    <span id="current-status" class="font-bold text-green-400">请在文件管理的input文件夹中放置小说文件，参照'小说名称/小说名称.txt'格式</span>
+                </p>
                 <div class="flex flex-wrap gap-4">
                     <button onclick="oneClickFilm()" class="bg-gradient-to-r from-gray-200 to-gray-300 hover:from-gray-300 hover:to-gray-400 text-gray-800 px-6 py-3 rounded-lg transition-all duration-200 flex items-center shadow-lg hover:shadow-xl future-glow text-base">
                         <i class="fas fa-film mr-2 text-base"></i>一键出片
                     </button>
-                    <button onclick="stopExecution()" class="bg-gradient-to-r from-gray-200 to-gray-300 hover:from-gray-300 hover:to-gray-400 text-gray-800 px-6 py-3 rounded-lg transition-all duration-200 flex items-center shadow-lg hover:shadow-xl future-glow text-base">
-                        <i class="fas fa-stop-circle mr-2 text-base"></i>停止执行
-                    </button>
+<!--                    <button onclick="stopExecution()" class="bg-gradient-to-r from-gray-200 to-gray-300 hover:from-gray-300 hover:to-gray-400 text-gray-800 px-6 py-3 rounded-lg transition-all duration-200 flex items-center shadow-lg hover:shadow-xl future-glow text-base">-->
+<!--                        <i class="fas fa-stop-circle mr-2 text-base"></i>停止执行-->
+<!--                    </button>-->
+                </div>
+            </div>
+        </div>
+
+        <!-- Projects Tab -->
+        <div id="projects" class="tab-content glass-effect rounded-xl p-6 mb-4 hidden card-hover relative z-20">
+            <h2 class="text-xl font-semibold mb-4 text-white flex items-center">
+                <i class="fas fa-book mr-2 text-blue-300 text-xl"></i>项目管理
+            </h2>
+            <div class="mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="glass-effect rounded-xl p-6">
+                        <h3 class="text-lg font-semibold mb-4 text-white flex items-center">
+                            <i class="fas fa-plus-circle mr-2 text-green-300"></i>创建新项目
+                        </h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-2">项目名称</label>
+                                <input type="text" id="projectName" placeholder="请输入项目名称（小说名）" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-2">项目描述</label>
+                                <textarea id="projectDescription" placeholder="请输入项目描述" rows="3" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-2">整体氛围提示词</label>
+                                <textarea id="globalPrompt" placeholder="请输入整体氛围提示词" rows="3" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-2">项目密码</label>
+                                <input type="password" id="projectPassword" placeholder="请输入项目访问密码" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <button onclick="createProject()" class="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-3 px-4 rounded-lg transition-all duration-200 future-glow">
+                                创建项目
+                            </button>
+                        </div>
+                    </div>
+                    <div class="glass-effect rounded-xl p-6">
+                        <h3 class="text-lg font-semibold mb-4 text-white flex items-center">
+                            <i class="fas fa-list mr-2 text-blue-300"></i>项目列表
+                        </h3>
+                        <div id="projectList" class="space-y-3 max-h-96 overflow-y-auto">
+                            <p class="text-gray-400 text-center py-8">暂无项目，创建一个新项目开始</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 章节管理部分 -->
+            <div id="chapterManagement" class="hidden">
+                <h3 class="text-lg font-semibold mb-4 text-white flex items-center">
+                    <i class="fas fa-bookmark mr-2 text-yellow-300"></i>章节管理
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="glass-effect rounded-xl p-6">
+                        <h4 class="text-md font-semibold mb-3 text-white">创建章节</h4>
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-1">章节标题</label>
+                                <input type="text" id="chapterTitle" placeholder="请输入章节标题" class="w-full px-3 py-2 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-1">章节内容</label>
+                                <textarea id="chapterContent" placeholder="请输入章节内容" rows="4" class="w-full px-3 py-2 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-1">氛围提示词</label>
+                                <textarea id="chapterPrompt" placeholder="请输入章节氛围提示词" rows="2" class="w-full px-3 py-2 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                            </div>
+                            <button onclick="createChapter()" class="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white py-2 px-4 rounded-lg transition-all duration-200">
+                                创建章节
+                            </button>
+                        </div>
+                    </div>
+                    <div class="glass-effect rounded-xl p-6">
+                        <h4 class="text-md font-semibold mb-3 text-white">章节列表</h4>
+                        <div id="chapterList" class="space-y-2 max-h-64 overflow-y-auto">
+                            <p class="text-gray-400 text-center py-4">暂无章节</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 场景管理部分 -->
+            <div id="sceneManagement" class="hidden">
+                <h3 class="text-lg font-semibold mb-4 text-white flex items-center">
+                    <i class="fas fa-video mr-2 text-purple-300"></i>场景管理
+                </h3>
+                <div class="glass-effect rounded-xl p-6">
+                    <h4 class="text-md font-semibold mb-3 text-white">创建场景</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">场景标题</label>
+                            <input type="text" id="sceneTitle" placeholder="请输入场景标题" class="w-full px-3 py-2 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">场景顺序</label>
+                            <input type="number" id="sceneOrder" placeholder="场景顺序" value="1" class="w-full px-3 py-2 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label class="block text-sm font-medium text-gray-300 mb-1">场景描述</label>
+                        <textarea id="sceneDescription" placeholder="请输入场景描述" rows="2" class="w-full px-3 py-2 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    <div class="mt-3">
+                        <label class="block text-sm font-medium text-gray-300 mb-1">场景提示词（可编辑）</label>
+                        <textarea id="scenePrompt" placeholder="请输入场景提示词" rows="3" class="w-full px-3 py-2 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    <div class="mt-3">
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Ollama配置（JSON格式，可编辑）</label>
+                        <textarea id="ollamaConfig" placeholder="请输入Ollama请求配置" rows="3" class="w-full px-3 py-2 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"></textarea>
+                    </div>
+                    <div class="mt-3">
+                        <label class="block text-sm font-medium text-gray-300 mb-1">DrawThings配置（JSON格式，可编辑）</label>
+                        <textarea id="drawThingsConfig" placeholder="请输入DrawThings配置" rows="3" class="w-full px-3 py-2 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"></textarea>
+                    </div>
+                    <div class="mt-4">
+                        <button onclick="createScene()" class="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white py-2 px-4 rounded-lg transition-all duration-200 mr-3">
+                            创建场景
+                        </button>
+                        <button onclick="loadScenesForCurrentChapter()" class="bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white py-2 px-4 rounded-lg transition-all duration-200">
+                            刷新场景列表
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-4 glass-effect rounded-xl p-6">
+                    <h4 class="text-md font-semibold mb-3 text-white">场景列表</h4>
+                    <div id="sceneList" class="space-y-2 max-h-64 overflow-y-auto">
+                        <p class="text-gray-400 text-center py-4">暂无场景</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 分享功能 -->
+            <div id="sharingManagement" class="hidden mt-6">
+                <h3 class="text-lg font-semibold mb-4 text-white flex items-center">
+                    <i class="fas fa-share-alt mr-2 text-teal-300"></i>分享管理
+                </h3>
+                <div class="glass-effect rounded-xl p-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">分享密码</label>
+                            <input type="password" id="sharePassword" placeholder="设置分享访问密码" class="w-full px-3 py-2 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div class="flex items-end">
+                            <button onclick="shareChapter()" class="w-full bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white py-2 px-4 rounded-lg transition-all duration-200">
+                                生成分享链接
+                            </button>
+                        </div>
+                    </div>
+                    <div id="shareResult" class="mt-3 hidden p-3 bg-black bg-opacity-20 rounded-lg">
+                        <p class="text-green-400">分享链接已生成：</p>
+                        <p id="shareLink" class="text-blue-300 break-all mt-1"></p>
+                    </div>
+                    <div class="mt-4">
+                        <button onclick="unshareChapter()" class="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white py-2 px-4 rounded-lg transition-all duration-200">
+                            取消分享
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -576,24 +740,7 @@
                         }
                         var modTime = new Date(file.modTime).toLocaleString();
                         
-                        row.innerHTML = `
-                            <td class="px-6 py-6 whitespace-nowrap">
-                                <div class="flex items-center">
-                                    <div class="mr-5 text-2xl opacity-80">${fileTypeDisplay}</div>
-                                    <div class="text-xl font-medium text-gray-200">
-                                        <span onclick="clickFileOrDir('${file.name}', ${file.isDir})" class="cursor-pointer hover:text-blue-300 transition-colors duration-150">${file.name}</span>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="px-6 py-6 whitespace-nowrap text-xl text-gray-300">${file.type}</td>
-                            <td class="px-6 py-6 whitespace-nowrap text-xl text-gray-300">${fileSizeDisplay}</td>
-                            <td class="px-6 py-6 whitespace-nowrap text-xl text-gray-300">${modTime}</td>
-                            <td class="px-6 py-6 whitespace-nowrap text-xl font-medium">
-                                ${previewButton}
-                                ${file.isDir && file.name.match(/^chapter_\d+$/) && (currentDirectory.includes('/output/') || currentDirectory.includes('output')) ? '<button onclick="sendToCapcut(\'' + file.name + '\')" class="text-green-400 hover:text-green-200 mr-5 text-lg transition-colors duration-150"><i class="fas fa-share mr-2"></i>一键到剪映</button>' : ''}
-                                <button onclick="deleteFile('${file.name}', ${file.isDir})" class="text-red-400 hover:text-red-200 transition-colors duration-150"><i class="fas fa-trash mr-2"></i>删除</button>
-                            </td>
-                        `;
+                        row.innerHTML = "<td class=\"px-6 py-6 whitespace-nowrap\">\n                                <div class=\"flex items-center\">\n                                    <div class=\"mr-5 text-2xl opacity-80\">" + fileTypeDisplay + "</div>\n                                    <div class=\"text-xl font-medium text-gray-200\">\n                                        <span onclick=\"clickFileOrDir('" + file.name + "', " + file.isDir + ")\" class=\"cursor-pointer hover:text-blue-300 transition-colors duration-150\">" + file.name + "</span>\n                                    </div>\n                                </div>\n                            </td>\n                            <td class=\"px-6 py-6 whitespace-nowrap text-xl text-gray-300\">" + file.type + "</td>\n                            <td class=\"px-6 py-6 whitespace-nowrap text-xl text-gray-300\">" + fileSizeDisplay + "</td>\n                            <td class=\"px-6 py-6 whitespace-nowrap text-xl text-gray-300\">" + modTime + "</td>\n                            <td class=\"px-6 py-6 whitespace-nowrap text-xl font-medium\">\n                                " + previewButton + "\n                                " + (file.isDir && file.name.match(/^chapter_\d+$/) && (currentDirectory.includes('/output/') || currentDirectory.includes('output')) ? '<button onclick="sendToCapcut(\'' + file.name + '\')" class="text-green-400 hover:text-green-200 mr-5 text-lg transition-colors duration-150"><i class="fas fa-share mr-2"></i>一键到剪映</button>' : '') + "\n                                <button onclick=\"deleteFile('" + file.name + "', " + file.isDir + ")\" class=\"text-red-400 hover:text-red-200 transition-colors duration-150\"><i class=\"fas fa-trash mr-2\"></i>删除</button>\n                            </td>\n                        ";
                         tbody.appendChild(row);
                     });
                     
@@ -710,7 +857,7 @@
                                 showTextPreview(content, filename);
                             });
                         } else {
-                            throw new Error(`HTTP error! status: ${response.status}`);
+                            throw new Error('HTTP error! status: ' + response.status);
                         }
                     })
                     .catch(function(error) {
@@ -781,7 +928,7 @@
             
             const contentDiv = document.createElement('div');
             contentDiv.className = 'flex-grow flex items-center justify-center p-4';
-            contentDiv.innerHTML = `<img src="${filePath}" alt="${filename}" class="max-h-[70vh] max-w-full object-contain rounded-xl">`;
+            contentDiv.innerHTML = '<img src="' + filePath + '" alt="' + filename + '" class="max-h-[70vh] max-w-full object-contain rounded-xl">';
             
             modal.appendChild(header);
             modal.appendChild(contentDiv);
@@ -914,14 +1061,14 @@
             if (files.length === 0) return;
             
             // 显示上传进度
-            document.getElementById('uploadStatus').innerHTML = `开始上传 ${files.length} 个文件...`;
+            document.getElementById('uploadStatus').innerHTML = '开始上传 ' + files.length + ' 个文件...';
             
             // 递归上传文件数组中的每个文件
             const uploadNext = (index) => {
                 if (index >= files.length) {
                     // 所有文件上传完成后刷新文件列表
                     loadFileList(currentDirectory);
-                    document.getElementById('uploadStatus').innerHTML = `所有文件上传完成 (${files.length} 个文件)`;
+                    document.getElementById('uploadStatus').innerHTML = '所有文件上传完成 (' + files.length + ' 个文件)';
                     return;
                 }
                 
@@ -954,7 +1101,7 @@
                 formData.append('dir', destDir);
                 
                 // 显示上传状态
-                document.getElementById('uploadStatus').innerHTML = `上传中: ${filePath} (${index + 1}/${files.length})`;
+                document.getElementById('uploadStatus').innerHTML = '上传中: ' + filePath + ' (' + (index + 1) + '/' + files.length + ')';
                 
                 fetch('/api/files/upload', {
                     method: 'POST',
@@ -973,7 +1120,7 @@
                 })
                 .catch(function(error) {
                     console.error('Error uploading file:', error);
-                    document.getElementById('uploadStatus').innerHTML = `上传失败: ${error.message}`;
+                    document.getElementById('uploadStatus').innerHTML = '上传失败: ' + error.message;
                     
                     // 即使出错也继续上传下一个文件
                     uploadNext(index + 1);
@@ -1107,8 +1254,8 @@
                             cardContent = `
                                 <div class="tool-header text-center">
                                     <div class="flex flex-col items-center">
-                                        <div class="w-16 h-16 bg-blue-500 bg-opacity-20 rounded-full flex items-center justify-center mb-4">
-                                            <i class="${iconClass} text-blue-300 text-2xl"></i>
+                                        <div class="w-20 h-20 bg-blue-500 bg-opacity-20 rounded-full flex items-center justify-center mb-5">
+                                            <i class="${iconClass} text-blue-300 text-3xl"></i>
                                         </div>
                                         <h3 class="text-xl font-bold text-white mb-2">${tool.name}</h3>
                                         <p class="text-lg text-gray-300 mb-4">${tool.description}</p>
@@ -1141,7 +1288,7 @@
                             cardContent = `
                                 <div class="tool-header text-center">
                                     <div class="flex flex-col items-center">
-                                        <div class="w-16 h-16 bg-blue-500 bg-opacity-20 rounded-full flex items-center justify-center mb-4">
+                                        <div class="w-20 h-20 bg-blue-500 bg-opacity-20 rounded-full flex items-center justify-center mb-4">
                                             <i class="${iconClass} text-blue-300 text-2xl"></i>
                                         </div>
                                         <h3 class="text-xl font-bold text-white mb-2 break-words max-w-full">${tool.name}</h3>
@@ -1413,12 +1560,424 @@
             });
         }
         
+        // 项目管理相关函数
+        let currentProjectId = null;
+        let currentChapterId = null;
+        
+        // 创建项目
+        function createProject() {
+            const name = document.getElementById('projectName').value;
+            const description = document.getElementById('projectDescription').value;
+            const globalPrompt = document.getElementById('globalPrompt').value;
+            const password = document.getElementById('projectPassword').value;
+            
+            if (!name || !password) {
+                alert('项目名称和密码不能为空');
+                return;
+            }
+            
+            fetch('/api/projects', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: name,
+                    description: description,
+                    global_prompt: globalPrompt,
+                    password: password
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert('项目创建成功');
+                document.getElementById('projectName').value = '';
+                document.getElementById('projectDescription').value = '';
+                document.getElementById('globalPrompt').value = '';
+                document.getElementById('projectPassword').value = '';
+                loadProjects(); // 重新加载项目列表
+            })
+            .catch(error => {
+                console.error('创建项目失败:', error);
+                alert('创建项目失败: ' + error.message);
+            });
+        }
+        
+        // 加载项目列表
+        function loadProjects() {
+            fetch('/api/projects')
+            .then(response => response.json())
+            .then(projects => {
+                const projectList = document.getElementById('projectList');
+                if (projects.length === 0) {
+                    projectList.innerHTML = '<p class="text-gray-400 text-center py-8">暂无项目，创建一个新项目开始</p>';
+                    return;
+                }
+                
+                projectList.innerHTML = '';
+                projects.forEach(project => {
+                    const projectDiv = document.createElement('div');
+                    projectDiv.className = 'glass-effect rounded-lg p-4 mb-2';
+                    projectDiv.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h4 class="font-medium text-white">${project.name}</h4>
+                                <p class="text-sm text-gray-300 mt-1">${project.description || '无描述'}</p>
+                                <p class="text-xs text-gray-400 mt-1">ID: ${project.ID}</p>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button onclick="viewProject(${project.ID})" class="text-blue-400 hover:text-blue-300 text-sm">管理</button>
+                                <button onclick="editProject(${project.ID})" class="text-yellow-400 hover:text-yellow-300 text-sm">编辑</button>
+                                <button onclick="deleteProject(${project.ID})" class="text-red-400 hover:text-red-300 text-sm">删除</button>
+                            </div>
+                        </div>
+                    `;
+                    projectList.appendChild(projectDiv);
+                });
+            })
+            .catch(error => {
+                console.error('加载项目列表失败:', error);
+                document.getElementById('projectList').innerHTML = '<p class="text-red-400 text-center py-4">加载项目列表失败</p>';
+            });
+        }
+        
+        // 查看项目详情
+        function viewProject(projectId) {
+            currentProjectId = projectId;
+            // 显示章节管理部分
+            document.getElementById('chapterManagement').classList.remove('hidden');
+            document.getElementById('sceneManagement').classList.add('hidden');
+            document.getElementById('sharingManagement').classList.add('hidden');
+            loadChapters(projectId);
+        }
+        
+        // 编辑项目
+        function editProject(projectId) {
+            // 这里可以实现编辑项目的逻辑
+            alert('编辑项目功能待实现');
+        }
+        
+        // 删除项目
+        function deleteProject(projectId) {
+            if (confirm('确定要删除这个项目吗？此操作不可恢复。')) {
+                fetch('/api/projects/' + projectId, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert('项目删除成功');
+                    loadProjects();
+                })
+                .catch(error => {
+                    console.error('删除项目失败:', error);
+                    alert('删除项目失败: ' + error.message);
+                });
+            }
+        }
+        
+        // 创建章节
+        function createChapter() {
+            if (!currentProjectId) {
+                alert('请先选择一个项目');
+                return;
+            }
+            
+            const title = document.getElementById('chapterTitle').value;
+            const content = document.getElementById('chapterContent').value;
+            const prompt = document.getElementById('chapterPrompt').value;
+            
+            if (!title) {
+                alert('章节标题不能为空');
+                return;
+            }
+            
+            fetch('/api/projects/' + currentProjectId + '/chapters', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    title: title,
+                    content: content,
+                    prompt: prompt
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert('章节创建成功');
+                document.getElementById('chapterTitle').value = '';
+                document.getElementById('chapterContent').value = '';
+                document.getElementById('chapterPrompt').value = '';
+                loadChapters(currentProjectId);
+            })
+            .catch(error => {
+                console.error('创建章节失败:', error);
+                alert('创建章节失败: ' + error.message);
+            });
+        }
+        
+        // 加载章节列表
+        function loadChapters(projectId) {
+            fetch(`/api/projects/${projectId}/chapters`)
+            .then(response => response.json())
+            .then(chapters => {
+                const chapterList = document.getElementById('chapterList');
+                if (chapters.length === 0) {
+                    chapterList.innerHTML = '<p class="text-gray-400 text-center py-4">暂无章节，创建一个新章节开始</p>';
+                    return;
+                }
+                
+                chapterList.innerHTML = '';
+                chapters.forEach(chapter => {
+                    const chapterDiv = document.createElement('div');
+                    chapterDiv.className = 'glass-effect rounded-lg p-3 mb-2';
+                    chapterDiv.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h4 class="font-medium text-white">${chapter.title}</h4>
+                                <p class="text-xs text-gray-400 mt-1">ID: ${chapter.ID}</p>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button onclick="viewChapterScenes(${chapter.ID})" class="text-blue-400 hover:text-blue-300 text-xs">场景</button>
+                                <button onclick="shareChapterBtn(${chapter.ID})" class="text-teal-400 hover:text-teal-300 text-xs">分享</button>
+                                <button onclick="editChapter(${chapter.ID})" class="text-yellow-400 hover:text-yellow-300 text-xs">编辑</button>
+                                <button onclick="deleteChapter(${chapter.ID})" class="text-red-400 hover:text-red-300 text-xs">删除</button>
+                            </div>
+                        </div>
+                    `;
+                    chapterList.appendChild(chapterDiv);
+                });
+            })
+            .catch(error => {
+                console.error('加载章节列表失败:', error);
+                document.getElementById('chapterList').innerHTML = '<p class="text-red-400 text-center py-4">加载章节列表失败</p>';
+            });
+        }
+        
+        // 查看章节场景
+        function viewChapterScenes(chapterId) {
+            currentChapterId = chapterId;
+            // 显示场景管理部分
+            document.getElementById('sceneManagement').classList.remove('hidden');
+            document.getElementById('sharingManagement').classList.remove('hidden');
+            loadScenesForCurrentChapter();
+        }
+        
+        // 编辑章节
+        function editChapter(chapterId) {
+            // 这里可以实现编辑章节的逻辑
+            alert('编辑章节功能待实现');
+        }
+        
+        // 删除章节
+        function deleteChapter(chapterId) {
+            if (confirm('确定要删除这个章节吗？此操作不可恢复。')) {
+                fetch('/api/chapters/' + chapterId, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert('章节删除成功');
+                    if (currentProjectId) {
+                        loadChapters(currentProjectId);
+                    }
+                })
+                .catch(error => {
+                    console.error('删除章节失败:', error);
+                    alert('删除章节失败: ' + error.message);
+                });
+            }
+        }
+        
+        // 创建场景
+        function createScene() {
+            if (!currentChapterId) {
+                alert('请先选择一个章节');
+                return;
+            }
+            
+            const title = document.getElementById('sceneTitle').value;
+            const description = document.getElementById('sceneDescription').value;
+            const prompt = document.getElementById('scenePrompt').value;
+            const ollamaConfig = document.getElementById('ollamaConfig').value;
+            const drawThingsConfig = document.getElementById('drawThingsConfig').value;
+            const order = parseInt(document.getElementById('sceneOrder').value) || 1;
+            
+            if (!title) {
+                alert('场景标题不能为空');
+                return;
+            }
+            
+            fetch('/api/chapters/' + currentChapterId + '/scenes', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    title: title,
+                    description: description,
+                    prompt: prompt,
+                    ollama_request: ollamaConfig,
+                    draw_things_config: drawThingsConfig,
+                    order: order
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert('场景创建成功');
+                document.getElementById('sceneTitle').value = '';
+                document.getElementById('sceneDescription').value = '';
+                document.getElementById('scenePrompt').value = '';
+                document.getElementById('ollamaConfig').value = '{"model":"llama3:8b","prompt":""}';
+                document.getElementById('drawThingsConfig').value = '{"prompt":"","negative_prompt":"","width":512,"height":896}';
+                document.getElementById('sceneOrder').value = '1';
+                loadScenesForCurrentChapter();
+            })
+            .catch(error => {
+                console.error('创建场景失败:', error);
+                alert('创建场景失败: ' + error.message);
+            });
+        }
+        
+        // 加载当前章节的场景
+        function loadScenesForCurrentChapter() {
+            if (!currentChapterId) return;
+            
+           fetch('/api/chapters/' + currentChapterId + '/scenes') 
+            .then(response => response.json())
+            .then(scenes => {
+                const sceneList = document.getElementById('sceneList');
+                if (scenes.length === 0) {
+                    sceneList.innerHTML = '<p class="text-gray-400 text-center py-4">暂无场景，创建一个新场景开始</p>';
+                    return;
+                }
+                
+                sceneList.innerHTML = '';
+                scenes.forEach(scene => {
+                    const sceneDiv = document.createElement('div');
+                    sceneDiv.className = 'glass-effect rounded-lg p-3 mb-2';
+                    sceneDiv.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h4 class="font-medium text-white">${scene.title} (顺序: ${scene.order})</h4>
+                                <p class="text-xs text-gray-400 mt-1">ID: ${scene.id}</p>
+                                <p class="text-xs text-gray-300 mt-1">${scene.description.substring(0, 50)}${scene.description.length > 50 ? '...' : ''}</p>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button onclick="editScene(${scene.id})" class="text-yellow-400 hover:text-yellow-300 text-xs">编辑</button>
+                                <button onclick="deleteScene(${scene.id})" class="text-red-400 hover:text-red-300 text-xs">删除</button>
+                            </div>
+                        </div>
+                    `;
+                    sceneList.appendChild(sceneDiv);
+                });
+            })
+            .catch(error => {
+                console.error('加载场景列表失败:', error);
+                document.getElementById('sceneList').innerHTML = '<p class="text-red-400 text-center py-4">加载场景列表失败</p>';
+            });
+        }
+        
+        // 编辑场景
+        function editScene(sceneId) {
+            // 这里可以实现编辑场景的逻辑
+            alert('编辑场景功能待实现，您可以直接在下方修改场景提示词和配置');
+        }
+        
+        // 删除场景
+        function deleteScene(sceneId) {
+            if (confirm('确定要删除这个场景吗？此操作不可恢复。')) {
+                fetch('/api/scenes/' + sceneId, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert('场景删除成功');
+                    loadScenesForCurrentChapter();
+                })
+                .catch(error => {
+                    console.error('删除场景失败:', error);
+                    alert('删除场景失败: ' + error.message);
+                });
+            }
+        }
+        
+        // 分享章节
+        function shareChapterBtn(chapterId) {
+            currentChapterId = chapterId;
+            // 显示分享管理部分
+            document.getElementById('sharingManagement').classList.remove('hidden');
+        }
+        
+        // 生成分享链接
+        function shareChapter() {
+            if (!currentChapterId) {
+                alert('请先选择一个章节');
+                return;
+            }
+            
+            const password = document.getElementById('sharePassword').value;
+            if (!password) {
+                alert('请输入分享密码');
+                return;
+            }
+            
+            fetch('/api/chapters/' + currentChapterId + '/share', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    password: password
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('shareResult').classList.remove('hidden');
+                document.getElementById('shareLink').textContent = window.location.origin + '/chapters/share/public/' + data.share_token;
+                document.getElementById('sharePassword').value = '';
+            })
+            .catch(error => {
+                console.error('生成分享链接失败:', error);
+                alert('生成分享链接失败: ' + error.message);
+            });
+        }
+        
+        // 取消分享
+        function unshareChapter() {
+            if (!currentChapterId) {
+                alert('请先选择一个章节');
+                return;
+            }
+            
+            fetch('/api/chapters/' + currentChapterId + '/unshare', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert('分享已取消');
+                document.getElementById('shareResult').classList.add('hidden');
+                document.getElementById('shareLink').textContent = '';
+            })
+            .catch(error => {
+                console.error('取消分享失败:', error);
+                alert('取消分享失败: ' + error.message);
+            });
+        }
+        
         // 初始化 - 加载工具列表
         window.onload = function() {
             // 在初始状态下加载工具列表
             if (document.querySelector('.nav-tab.active').textContent.includes('MCP 工具')) {
                 loadToolsList();
             }
+            
+            // 同时加载项目列表
+            loadProjects();
         };
     </script>
 </body>

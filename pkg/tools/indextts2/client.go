@@ -507,7 +507,7 @@ func (c *IndexTTS2Client) GenerateTTSWithAudio(audioPath, text, outputPath strin
 	}
 
 	c.Logger.Info("TTS生成完成", zap.String("output", outputPath))
-	c.sendBroadcast("success", fmt.Sprintf("TTS生成完成，输出文件: %s", outputPath))
+	c.sendBroadcast("success", fmt.Sprintf("🏆TTS生成完成，输出文件: %s", outputPath))
 	return nil
 }
 
@@ -640,9 +640,6 @@ func (c *IndexTTS2Client) GenerateTTSWithFile(audioPath string, text string) (*T
 	scanner := bufio.NewScanner(resultResp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		c.Logger.Info("接收到SSE结果....", zap.String("line", line))
-		//发送广播
-		c.sendBroadcast("接收到SSE结果....", line)
 		if strings.HasPrefix(line, "data: ") {
 			data := strings.TrimPrefix(line, "data: ")
 
@@ -661,12 +658,15 @@ func (c *IndexTTS2Client) GenerateTTSWithFile(audioPath string, text string) (*T
 			// 检查消息类型
 			if msg, ok := sseData["msg"]; ok {
 				switch msg {
+				case "heartbeat":
+					c.Logger.Info("心跳")
+					c.sendBroadcast("处理中...", fmt.Sprintf("⏳请耐心等待..."))
 				case "estimation":
 					// 处理估计队列位置
 					if rank, exists := sseData["rank"]; exists {
 						if queueSize, exists2 := sseData["queue_size"]; exists2 {
 							c.Logger.Info("排队中", zap.Float64("rank", rank.(float64)), zap.Float64("queue_size", queueSize.(float64)))
-							c.sendBroadcast("info", fmt.Sprintf("排队中，当前排名: %.0f/%.0f", rank.(float64), queueSize.(float64)))
+							c.sendBroadcast("info", fmt.Sprintf("🔢排队中，当前排名: %.0f/%.0f", rank.(float64), queueSize.(float64)))
 						} else {
 							c.Logger.Info("排队中", zap.Float64("rank", rank.(float64)))
 							c.sendBroadcast("info", fmt.Sprintf("排队中，当前排名: %.0f", rank.(float64)))
@@ -674,12 +674,12 @@ func (c *IndexTTS2Client) GenerateTTSWithFile(audioPath string, text string) (*T
 					}
 				case "process_starts":
 					// 处理开始处理
-					c.Logger.Info("开始处理TTS生成")
-					c.sendBroadcast("info", "开始处理TTS生成")
+					c.Logger.Info("🏃🏻‍♀️开始处理TTS生成")
+					c.sendBroadcast("info", "🏃🏻‍♀️开始处理TTS生成")
 				case "process_completed":
 					// 处理完成
 					c.Logger.Info("TTS生成完成")
-					c.sendBroadcast("success", "TTS生成完成")
+					c.sendBroadcast("success", "✅TTS生成完成")
 					// 检查是否成功
 					if success, ok := sseData["success"]; ok {
 						if success == true || success == "true" {
@@ -722,33 +722,16 @@ func (c *IndexTTS2Client) GenerateTTSWithFile(audioPath string, text string) (*T
 					} else {
 						return nil, fmt.Errorf("TTS生成失败，响应中无success字段: %+v", sseData)
 					}
-				case "process_generating":
-					// 处理生成中的状态
-					c.Logger.Info("TTS正在生成中")
-					// 检查是否有进度信息
-					if data, exists := sseData["output"]; exists {
-						if outputMap, ok := data.(map[string]interface{}); ok {
-							if log, exists := outputMap["progress_data"]; exists {
-								c.Logger.Info("生成进度", zap.Any("progress", log))
-							}
-						}
-					}
-				case "log":
-					// 处理日志信息
-					if data, exists := sseData["data"]; exists {
-						c.Logger.Info("服务器日志", zap.Any("data", data))
-						c.sendBroadcast("log", fmt.Sprintf("服务器日志: %v", data))
-					}
 				case "progress":
 					// 处理进度信息
-					if data, exists := sseData["process_data"]; exists {
+					if dt, exists := sseData["progress_data"]; exists {
 						//data里面的第0个里面的process数据
-						process_rate := data.([]interface{})[0].(map[string]interface{})["process"]
+						process_rate := dt.([]interface{})[0].(map[string]interface{})["progress"]
 						c.Logger.Info("进度更新", zap.Any("data", process_rate))
-						c.sendBroadcast("解析进度", fmt.Sprintf("进度更新: %v", process_rate))
+						c.sendBroadcast("info", fmt.Sprintf("💬进度: %v", process_rate))
 					}
 				case "close_stream":
-					c.sendBroadcast("log", fmt.Sprintf("异常: %s", "流已关闭，但未收到结果"))
+					c.sendBroadcast("log", fmt.Sprintf("⚠️异常: %s", "流已关闭，但未收到结果"))
 					return nil, fmt.Errorf("流已关闭，但未收到结果")
 				}
 			}

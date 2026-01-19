@@ -22,13 +22,15 @@ type OllamaClient struct {
 	BroadcastService *broadcast.BroadcastService
 }
 
+var defaultModel = "qwen3:4b"
+
 // NewOllamaClient 创建新的Ollama客户端实例
 func NewOllamaClient(logger *zap.Logger, baseURL string, model string) *OllamaClient {
 	if baseURL == "" {
 		baseURL = "http://localhost:11434" // Ollama默认地址
 	}
 	if model == "" {
-		model = "qwen3:4b" // 默认模型
+		model = defaultModel // 默认模型
 	}
 
 	return &OllamaClient{
@@ -164,7 +166,7 @@ func (c *OllamaClient) GenerateImagePrompt(text, style string) (string, error) {
 
 // AnalyzeScenesAndGeneratePrompts 分析整个章节内容并生成分镜提示词
 func (c *OllamaClient) AnalyzeScenesAndGeneratePrompts(content, style string, estimatedDurationSecs int) ([]string, error) {
-	systemPrompt := `你是一个专业的影视分镜师和AI图像生成提示词工程师。你的任务是：
+	systemPrompt := `🎬你是一个专业的影视分镜师和AI图像生成提示词工程师。你的任务是：
 1. 分析输入的文本内容
 2. 识别出适合生成图像的关键场景/分镜
 3. 为每个分镜生成详细的中文图像提示词
@@ -184,7 +186,7 @@ func (c *OllamaClient) AnalyzeScenesAndGeneratePrompts(content, style string, es
 		estimatedDurationMsg = ""
 	}
 
-	userPrompt := fmt.Sprintf(`请分析以下文本内容并生成分镜图像提示词：
+	userPrompt := fmt.Sprintf(`🎬请分析以下文本内容并生成分镜图像提示词：
 
 文本内容：%s
 

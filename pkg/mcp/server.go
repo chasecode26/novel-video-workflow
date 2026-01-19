@@ -85,3 +85,8 @@ func (s *Server) GetToolNames() []string {
 func (s *Server) GetHandler() *Handler {
 	return s.handler
 }
+
+// GetProcessor 返回工作流处理器
+func (s *Server) GetProcessor() *workflow.Processor {
+	return s.processor
+}
