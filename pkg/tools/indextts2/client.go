@@ -727,8 +727,10 @@ func (c *IndexTTS2Client) GenerateTTSWithFile(audioPath string, text string) (*T
 					if dt, exists := sseData["progress_data"]; exists {
 						//data里面的第0个里面的process数据
 						process_rate := dt.([]interface{})[0].(map[string]interface{})["progress"]
-						c.Logger.Info("进度更新", zap.Any("data", process_rate))
-						c.sendBroadcast("info", fmt.Sprintf("💬进度: %v", process_rate))
+						//转换为float64,再转成百分比
+						process_rate_percent := fmt.Sprintf("进度%.2f", process_rate.(float64)*100)
+						c.Logger.Info("进度更新", zap.Any("data", process_rate_percent))
+						c.sendBroadcast("info", fmt.Sprintf("💬进度: %v", process_rate_percent))
 					}
 				case "close_stream":
 					c.sendBroadcast("log", fmt.Sprintf("⚠️异常: %s", "流已关闭，但未收到结果"))

@@ -54,6 +54,66 @@ func migrateDB(db *gorm.DB) error {
 		return fmt.Errorf("自动迁移表结构失败: %v", err)
 	}
 
+	// 检查并添加workflow_params列（如果不存在）
+	// SQLite需要特殊处理，不能直接使用IF NOT EXISTS
+	rows, err := db.Raw("PRAGMA table_info(chapters);").Rows()
+	if err != nil {
+		return fmt.Errorf("检查chapters表结构失败: %v", err)
+	}
+	defer rows.Close()
+	
+	var columnExists = false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dfltValue *string
+		var pk int
+		err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk)
+		if err != nil {
+			continue
+		}
+		if name == "workflow_params" {
+			columnExists = true
+			break
+		}
+	}
+	
+	if !columnExists {
+		if err := db.Exec("ALTER TABLE chapters ADD COLUMN workflow_params TEXT").Error; err != nil {
+			return fmt.Errorf("添加workflow_params列失败: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// ensureSceneTableColumns 确保Scene表包含所有必需的列
+func ensureSceneTableColumns(db *gorm.DB) error {
+	// 检查并添加缺失的列，使用 GORM 的 AutoMigrate 来处理 SQLite 的兼容性
+	type TempScene struct {
+		gorm.Model
+		Title            string `gorm:"column:title"`
+		Description      string `gorm:"column:description"`
+		Prompt           string `gorm:"column:prompt"`
+		SegmentationInfo string `gorm:"column:segmentation_info;type:text"`
+		OriginalText     string `gorm:"column:original_text;type:text"`
+		OllamaRequest    string `gorm:"column:ollama_request;type:text"`
+		OllamaResponse   string `gorm:"column:ollama_response;type:text"`
+		DrawThingsConfig string `gorm:"column:draw_things_config;type:text"`
+		DrawThingsResult string `gorm:"column:draw_things_result;type:text"`
+		ChapterID        uint   `gorm:"column:chapter_id;not null"`
+		ImageURL         string `gorm:"column:image_url"`
+		AudioURL         string `gorm:"column:audio_url"`
+		RetryCount       int    `gorm:"column:retry_count;default:0"`
+		Order            int    `gorm:"column:order"`
+	}
+
+	// 使用 AutoMigrate 来自动创建或更新表结构
+	if err := db.Table("scenes").AutoMigrate(&TempScene{}); err != nil {
+		return fmt.Errorf("自动迁移Scene表失败: %v", err)
+	}
+
 	return nil
 }
 
@@ -256,55 +316,7 @@ func ValidateProjectPassword(projectID uint, password string) (bool, error) {
 	return CheckPasswordHash(password, project.PasswordHash), nil
 }
 
-// ValidateChapterSharePassword 验证章节分享密码
-func ValidateChapterSharePassword(shareToken, password string) (bool, error) {
-	var chapter Chapter
-	result := DB.Select("share_password").Where("share_token = ? AND is_shared = ?", shareToken, true).First(&chapter)
-	if result.Error != nil {
-		return false, result.Error
-	}
 
-	return CheckPasswordHash(password, chapter.SharePassword), nil
-}
-
-// GetChapterByShareToken 根据分享令牌获取章节（公开信息）
-func GetChapterByShareToken(shareToken string) (*Chapter, error) {
-	var chapter Chapter
-	result := DB.Preload("Scenes").Where("share_token = ? AND is_shared = ?", shareToken, true).First(&chapter)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	return &chapter, nil
-}
-
-// SetChapterAsShared 设置章节为已分享状态
-func SetChapterAsShared(chapterID uint, shareToken, password string) error {
-	hashedPassword, err := HashPassword(password)
-	if err != nil {
-		return fmt.Errorf("密码哈希失败: %v", err)
-	}
-
-	updates := map[string]interface{}{
-		"share_token":   shareToken,
-		"share_password": hashedPassword,
-		"is_shared":     true,
-	}
-
-	result := DB.Model(&Chapter{}).Where("id = ?", chapterID).Updates(updates)
-	return result.Error
-}
-
-// RevokeChapterShare 取消章节分享
-func RevokeChapterShare(chapterID uint) error {
-	updates := map[string]interface{}{
-		"share_token":    "",
-		"share_password": "",
-		"is_shared":      false,
-	}
-
-	result := DB.Model(&Chapter{}).Where("id = ?", chapterID).Updates(updates)
-	return result.Error
-}
 
 // GetAllProjects 获取所有项目
 func GetAllProjects() ([]Project, error) {

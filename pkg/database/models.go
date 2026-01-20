@@ -24,9 +24,7 @@ type Chapter struct {
 	ImagePaths    string  `json:"image_paths"` // 章节图片路径数组（JSON格式）
 	ProjectID     uint    `json:"project_id" gorm:"not null"`
 	Scenes        []Scene `json:"scenes" gorm:"foreignKey:ChapterID"`
-	ShareToken    string  `json:"share_token"` // 章节分享令牌
-	SharePassword string  `json:"-"`           // 章节分享密码哈希
-	IsShared      bool    `json:"is_shared"`   // 是否已分享
+	WorkflowParams string `json:"workflow_params" gorm:"type:text"` // 工作流参数
 }
 
 // Scene 场景模型，属于一个章节
@@ -35,6 +33,8 @@ type Scene struct {
 	Title            string `json:"title"`
 	Description      string `json:"description"`        // 场景文本
 	Prompt           string `json:"prompt"`             // 场景提示词
+	SegmentationInfo string `json:"segmentation_info"`  // 智能分镜信息
+	OriginalText     string `json:"original_text"`      // 发送给Ollama的原始描述文本
 	OllamaRequest    string `json:"ollama_request"`     // 发送给Ollama的请求JSON
 	OllamaResponse   string `json:"ollama_response"`    // Ollama返回的结果JSON
 	DrawThingsConfig string `json:"draw_things_config"` // 发送给DrawThings的配置JSON
@@ -42,5 +42,8 @@ type Scene struct {
 	ChapterID        uint   `json:"chapter_id" gorm:"not null"`
 	ImageURL         string `json:"image_url"` // 生成的图像URL
 	AudioURL         string `json:"audio_url"` // 生成的音频URL
+	RetryCount       int    `json:"retry_count"` // 重试次数
 	Order            int    `json:"order"`     // 场景顺序
 }
+
+

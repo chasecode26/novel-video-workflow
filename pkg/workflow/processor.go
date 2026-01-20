@@ -128,24 +128,8 @@ func (p *Processor) DeleteScene(id uint) error {
 	return database.DeleteScene(id)
 }
 
-func (p *Processor) SetChapterAsShared(chapterID uint, shareToken, password string) error {
-	return database.SetChapterAsShared(chapterID, shareToken, password)
-}
-
-func (p *Processor) RevokeChapterShare(chapterID uint) error {
-	return database.RevokeChapterShare(chapterID)
-}
-
-func (p *Processor) GetChapterByShareToken(shareToken string) (*database.Chapter, error) {
-	return database.GetChapterByShareToken(shareToken)
-}
-
 func (p *Processor) ValidateProjectPassword(projectID uint, password string) (bool, error) {
 	return database.ValidateProjectPassword(projectID, password)
-}
-
-func (p *Processor) ValidateChapterSharePassword(shareToken, password string) (bool, error) {
-	return database.ValidateChapterSharePassword(shareToken, password)
 }
 
 // GetAllProjects 获取所有项目

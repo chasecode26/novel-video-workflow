@@ -58,30 +58,6 @@ func main() {
 	}
 	fmt.Println("项目更新成功")
 
-	// 测试分享功能
-	err = processor.SetChapterAsShared(chapter.ID, "test-token-123", "share-password")
-	if err != nil {
-		log.Fatalf("设置章节分享失败: %v", err)
-	}
-	fmt.Println("章节分享设置成功")
-
-	// 测试验证分享密码
-	valid, err := processor.ValidateChapterSharePassword("test-token-123", "share-password")
-	if err != nil {
-		log.Fatalf("验证分享密码失败: %v", err)
-	}
-	if valid {
-		fmt.Println("分享密码验证成功")
-	} else {
-		fmt.Println("分享密码验证失败")
-	}
-
-	// 获取分享的章节
-	sharedChapter, err := processor.GetChapterByShareToken("test-token-123")
-	if err != nil {
-		log.Fatalf("获取分享章节失败: %v", err)
-	}
-	fmt.Printf("获取分享章节成功: %s\n", sharedChapter.Title)
 
 	fmt.Println("所有测试通过!")
 }
