@@ -1,0 +1,28 @@
+启动小说视频工作流系统...
+MCP 服务器和 Web 服务器正在后台运行...
+- MCP 服务器: 供 AI 代理和其他客户端调用
+- Web 服务器: http://localhost:8080 供用户界面操作
+按 Ctrl+C 停止服务
+启动 MCP 服务器模式...
+正在检查服务可用性...
+🔍 执行自检程序...
+启动 Web 服务器模式...
+  📋 检查Ollama...{"level":"info","ts":1768998878.425615,"caller":"database/init.go:24","msg":"初始化数据库","path":"/Users/mac/code/ai/novel-video-workflow/db.sqlite"}
+ ✅
+  📋 检查DrawThings...{"level":"info","ts":1768998878.432506,"caller":"drawthings/client.go:136","msg":"DrawThings API可用","url":"http://localhost:7861"}
+ ✅
+  📋 检查IndexTTS2...{"level":"info","ts":1768998878.436349,"caller":"database/init.go:31","msg":"数据库初始化成功"}
+{"level":"info","ts":1768998878.4409962,"caller":"drawthings/client.go:136","msg":"DrawThings API可用","url":"http://localhost:7861"}
+{"level":"info","ts":1768998878.441066,"caller":"mcp/handler.go:138","msg":"MCP tools registered","tool_count":7}
+2026/01/21 20:34:38 MCP服务器启动成功，加载了 7 个工具
+2026/01/21 20:34:38 Loaded 7 MCP tools
+2026/01/21 20:34:38 服务器启动在 :8080
+ ✅
+  📋 检查Aegisub脚本... ✅
+  📋 检查参考音频文件... ✅
+✅ 所有服务均正常
+{"level":"info","ts":1768998878.447725,"caller":"novel-video-workflow/main.go:88","msg":"配置文件加载成功","path":"/Users/mac/code/ai/novel-video-workflow/config.yaml"}
+{"level":"info","ts":1768998878.447762,"caller":"database/init.go:24","msg":"初始化数据库","path":"./db.sqlite"}
+{"level":"info","ts":1768998878.453983,"caller":"database/init.go:31","msg":"数据库初始化成功"}
+{"level":"info","ts":1768998878.456057,"caller":"drawthings/client.go:136","msg":"DrawThings API可用","url":"http://localhost:7861"}
+{"level":"info","ts":1768998878.456098,"caller":"mcp/handler.go:138","msg":"MCP tools registered","tool_count":7}

@@ -138,7 +138,7 @@ func (c *OllamaClient) GenerateImagePromptWithTemplate(text, style, templateName
 		zap.String("style", style),
 		zap.String("template", templateName))
 
-	c.SendMsg(fmt.Sprintf("正在生成TTS语音，文本长度: %d", len(text)))
+	c.SendMsg(fmt.Sprintf("开始使用Ollama生成图像提示词:风格：%s,模板:%s,内容：%s", style, templateName, text))
 
 	// 如果指定了模板名称，则从数据库获取模板
 	var systemPrompt, userPrompt string
@@ -181,6 +181,7 @@ func (c *OllamaClient) GenerateImagePromptWithTemplate(text, style, templateName
 	c.Logger.Info("发送Ollama请求生成图像提示词",
 		zap.String("endpoint", endpoint),
 		zap.String("model", request.Model))
+	c.SendMsg(fmt.Sprintf("发送Ollama请求生成图像提示词:节点：%s,模型:%s，【系统】%s,【用户】%s", endpoint, request.Model, systemPrompt, userPrompt))
 
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(payload))
 	if err != nil {

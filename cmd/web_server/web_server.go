@@ -1087,8 +1087,6 @@ func webServerMain() {
 	// 添加CapCut项目生成API端点
 	r.GET("/api/capcut-project", capcutProjectHandler)
 
-
-
 	// 提示词模板相关路由
 	promptTemplateAPI := api_pkg.NewPromptTemplateAPI(mcpServerInstance.GetProcessor())
 	r.GET("/api/prompt-templates", promptTemplateAPI.GetPromptTemplates)
@@ -1109,22 +1107,24 @@ func webServerMain() {
 	// 添加调试API端点，用于检查全局变量
 	r.GET("/api/debug/global-style", debugGlobalStyleHandler)
 
-
-
 	// 添加静态文件服务，用于提供input和output目录的文件访问
 	// 使用项目根路径确保正确访问input和output目录
 	inputPath := filepath.Join(projectRoot, "input")
 	outputPath := filepath.Join(projectRoot, "output")
 	assetsPath := filepath.Join(projectRoot, "assets")
+	templatePath := filepath.Join(projectRoot, "templates")
 
 	// 确保目录存在
 	os.MkdirAll(inputPath, 0755)
 	os.MkdirAll(outputPath, 0755)
 	os.MkdirAll(assetsPath, 0755)
+	os.MkdirAll(templatePath, 0755)
 
 	r.Static("/files/input", inputPath)
 	r.Static("/files/output", outputPath)
 	r.Static("assets", assetsPath)
+	r.Static("css", filepath.Join(templatePath, "css"))
+	r.Static("js", filepath.Join(templatePath, "js"))
 
 	// 从环境变量获取端口，默认为8080
 	port := os.Getenv("PORT")
@@ -1515,14 +1515,14 @@ func oneClickFilmHandler(c *gin.Context) {
 
 						// 保存音频生成参数到数据库
 						chapterParams := map[string]interface{}{
-							"chapter_number": key,
-							"chapter_title":  fmt.Sprintf("第%d章", key),
+							"chapter_number":         key,
+							"chapter_title":          fmt.Sprintf("第%d章", key),
 							"chapter_content_length": len(val),
 							"audio_generation": map[string]interface{}{
-								"input_text": val[:min(len(val), 100)], // 只保存前100个字符作为示例
+								"input_text":      val[:min(len(val), 100)], // 只保存前100个字符作为示例
 								"reference_audio": "./assets/ref_audio/ref.m4a",
-								"output_file": audioFile,
-								"timestamp": time.Now().Format(time.RFC3339),
+								"output_file":     audioFile,
+								"timestamp":       time.Now().Format(time.RFC3339),
 							},
 						}
 
@@ -1589,7 +1589,7 @@ func oneClickFilmHandler(c *gin.Context) {
 						if result.Error != nil {
 							// 如果项目不存在，创建新项目
 							project = database.Project{
-								Name: item.Name(),
+								Name:        item.Name(),
 								Description: fmt.Sprintf("项目%s的一键出片工作流", item.Name()),
 							}
 							database.DB.Create(&project)
@@ -1597,9 +1597,9 @@ func oneClickFilmHandler(c *gin.Context) {
 
 						// 创建临时章节记录用于获取ID，以便关联场景
 						tempChapter := database.Chapter{
-							Title: fmt.Sprintf("第%d章", key),
-							Content: val[:min(len(val), 1000)], // 只保存部分内容作为示例
-							ProjectID: project.ID,
+							Title:          fmt.Sprintf("第%d章", key),
+							Content:        val[:min(len(val), 1000)], // 只保存部分内容作为示例
+							ProjectID:      project.ID,
 							WorkflowParams: "{}", // 临时值
 						}
 						database.DB.Create(&tempChapter)
@@ -1669,7 +1669,7 @@ func oneClickFilmHandler(c *gin.Context) {
 							if result.Error != nil {
 								// 如果项目不存在，创建新项目
 								project = database.Project{
-									Name: item.Name(),
+									Name:        item.Name(),
 									Description: fmt.Sprintf("项目%s的一键出片工作流", item.Name()),
 								}
 								database.DB.Create(&project)
@@ -1681,9 +1681,9 @@ func oneClickFilmHandler(c *gin.Context) {
 							if result.Error != nil {
 								// 如果章节不存在，创建新章节
 								chapter = database.Chapter{
-									Title: fmt.Sprintf("第%d章", key),
-									Content: val[:min(len(val), 1000)], // 只保存部分内容作为示例
-									ProjectID: project.ID,
+									Title:          fmt.Sprintf("第%d章", key),
+									Content:        val[:min(len(val), 1000)], // 只保存部分内容作为示例
+									ProjectID:      project.ID,
 									WorkflowParams: workflowParamsStr,
 								}
 								database.DB.Create(&chapter)
@@ -1916,8 +1916,6 @@ func debugGlobalStyleHandler(c *gin.Context) {
 		"additional_prompt": AdditionalPrompt,
 	})
 }
-
-
 
 // convertImageToBase64 将图片文件转换为base64编码
 func convertImageToBase64(imagePath string) string {

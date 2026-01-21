@@ -364,7 +364,7 @@ func (c *IndexTTS2Client) DownloadAudio(audioURL, savePath string) error {
 func (c *IndexTTS2Client) GenerateTTSWithAudio(audioPath, text, outputPath string) error {
 	c.Logger.Info("开始TTS生成",
 		zap.String("audio_path", audioPath),
-		zap.String("text", fmt.Sprintf("%s-%d", text[:10], len(text))), //text只取前10个字符
+		zap.String("text", fmt.Sprintf("%s-%d", text, len(text))), //text只取前10个字符
 		zap.String("output_path", outputPath))
 
 	c.sendBroadcast("info", fmt.Sprintf("开始TTS生成，音频路径: %s", audioPath))
@@ -390,7 +390,7 @@ func (c *IndexTTS2Client) GenerateTTSWithAudio(audioPath, text, outputPath strin
 
 	c.Logger.Info("使用音频文件进行TTS生成", zap.String("audio_path", audioPath))
 	c.sendBroadcast("info", "使用音频文件进行TTS生成")
-	c.Logger.Info("正在生成TTS语音", zap.String("text", fmt.Sprintf("%s-%d", text[:10], len(text))))
+	c.Logger.Info("正在生成TTS语音", zap.String("text", fmt.Sprintf("%s-%d", text, len(text))))
 	c.sendBroadcast("info", fmt.Sprintf("正在生成TTS语音，文本长度: %d", len(text)))
 
 	// 直接调用带音频文件的TTS生成
@@ -570,7 +570,7 @@ func (c *IndexTTS2Client) GenerateTTSWithFile(audioPath string, text string) (*T
 		return nil, fmt.Errorf("序列化请求数据失败: %v", err)
 	}
 
-	c.Logger.Info("准备发送TTS请求", zap.String("text", text[:10]), zap.Any("first_param", requestData["data"].([]interface{})[0]))
+	c.Logger.Info("准备发送TTS请求", zap.String("text", text), zap.Any("first_param", requestData["data"].([]interface{})[0]))
 	c.sendBroadcast("info", "准备发送TTS请求")
 
 	// 首先将任务加入队列

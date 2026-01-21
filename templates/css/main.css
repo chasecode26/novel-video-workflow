@@ -1,0 +1,215 @@
+/* 视频背景容器 */
+.video-background {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    min-width: 100%;
+    min-height: 100%;
+    width: auto;
+    height: auto;
+    z-index: -100;
+    overflow: hidden;
+}
+
+/* SVG蒙版层 */
+.background-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="none" stroke="%23ffffff" stroke-width="0.5" stroke-opacity="0.1"/><circle cx="50" cy="50" r="45" fill="none" stroke="%23ffffff" stroke-opacity="0.05" stroke-width="0.3"/><path d="M20,20 Q40,5 60,20 T100,20" fill="none" stroke="%23ffffff" stroke-opacity="0.05" stroke-width="0.2"/><path d="M10,80 Q30,65 50,80 T90,80" fill="none" stroke="%23ffffff" stroke-opacity="0.05" stroke-width="0.2"/><path d="M70,10 Q85,30 70,50 T70,90" fill="none" stroke="%23ffffff" stroke-opacity="0.05" stroke-width="0.2"/></svg>') repeat;
+    z-index: -90;
+    pointer-events: none;
+}
+
+/* 创作主题装饰元素 */
+.creative-element {
+    position: absolute;
+    z-index: -1;
+    opacity: 0.15;
+    color: white;
+    font-size: 2rem;
+    animation: rotate 25s linear infinite;
+}
+
+.creative-element:nth-child(2) {
+    top: 20%;
+    left: 10%;
+    font-size: 3rem;
+    animation-delay: -5s;
+}
+
+.creative-element:nth-child(3) {
+    top: 60%;
+    right: 15%;
+    font-size: 2.5rem;
+    animation-delay: -10s;
+}
+
+.creative-element:nth-child(4) {
+    bottom: 20%;
+    left: 20%;
+    font-size: 2.8rem;
+    animation-delay: -15s;
+}
+
+.creative-element:nth-child(5) {
+    top: 40%;
+    right: 25%;
+    font-size: 2.2rem;
+    animation-delay: -18s;
+}
+
+.creative-element:nth-child(6) {
+    top: 10%;
+    right: 10%;
+    font-size: 4rem;
+    animation-delay: -8s;
+}
+
+.creative-element:nth-child(7) {
+    bottom: 15%;
+    right: 20%;
+    font-size: 3.5rem;
+    animation-delay: -20s;
+}
+
+.creative-element:nth-child(8) {
+    top: 30%;
+    left: 25%;
+    font-size: 3.2rem;
+    animation-delay: -12s;
+}
+
+.creative-element:nth-child(9) {
+    bottom: 30%;
+    right: 30%;
+    font-size: 2.7rem;
+    animation-delay: -22s;
+}
+
+.creative-element:nth-child(10) {
+    top: 70%;
+    left: 5%;
+    font-size: 2.5rem;
+    animation-delay: -25s;
+}
+
+@keyframes rotate {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* 影视创作大图标 */
+.cinema-icon {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 12rem;
+    opacity: 0.05;
+    z-index: -95;
+    pointer-events: none;
+    animation: pulse 8s infinite alternate;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.03; }
+    100% { opacity: 0.07; }
+}
+
+body {
+    background: linear-gradient(135deg, #2c3e50 0%, #1c1c1e 100%);
+    min-height: 100vh;
+    background-attachment: fixed;
+    position: relative;
+    overflow-x: hidden;
+}
+
+.glass-effect {
+    background: rgba(30, 30, 36, 0.25);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* 提升标题部分的层级 */
+header {
+    position: relative;
+    z-index: 10;
+}
+
+/* 动态AI渐变标题 */
+.ai-gradient-text {
+    background: linear-gradient(45deg, 
+        #FF6B6B, #FF8E53, #FFCE54, #8CC97D, 
+        #4BC0C0, #5C9EFF, #AC7AFF, #FF6B9D,
+        #6B6BFF, #6BFFD9, #FF6BB3, #B36BFF);
+    background-size: 400% 400%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: gradient-shift 6s ease-in-out infinite;
+}
+
+@keyframes gradient-shift {
+    0% { background-position: 0% 50%; }
+    25% { background-position: 50% 100%; }
+    50% { background-position: 100% 50%; }
+    75% { background-position: 50% 0%; }
+    100% { background-position: 0% 50%; }
+}
+
+.card-hover {
+    transition: all 0.3s ease;
+    transform: translateY(0);
+}
+
+.card-hover:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.future-glow {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.future-glow:hover {
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
+}
+
+/* 视频创作主题增强 */
+.creative-header {
+    position: relative;
+    overflow: hidden;
+}
+
+.creative-header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    animation: rotate 20s linear infinite;
+    z-index: -1;
+}
+
+/* 重复的视频背景样式 - 从HTML中移除重复定义 */
+.video-background {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    min-width: 100%;
+    min-height: 100%;
+    width: auto;
+    height: auto;
+    z-index: -100;
+    overflow: hidden;
+}
