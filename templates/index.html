@@ -117,6 +117,9 @@
                 <button class="nav-tab px-8 py-4 font-semibold text-sm md:text-base text-gray-200 bg-transparent hover:bg-white hover:bg-opacity-30 transition-colors" onclick="switchTab('filemanager')">
                     <i class="fas fa-folder mr-2 text-lg"></i>文件管理
                 </button>
+                <button class="nav-tab px-8 py-4 font-semibold text-sm md:text-base text-gray-200 bg-transparent hover:bg-white hover:bg-opacity-30 transition-colors" onclick="switchTab('chapter-management')">
+                    <i class="fas fa-book mr-2 text-lg"></i>章节管理
+                </button>
                 <button class="nav-tab px-8 py-4 font-semibold text-sm md:text-base text-gray-200 bg-transparent hover:bg-white hover:bg-opacity-30 transition-colors" onclick="switchTab('settings')">
                     <i class="fas fa-cog mr-2 text-lg"></i>设置
                 </button>
@@ -201,6 +204,45 @@
                     </div>
                 </div>
                 <div id="fileList" class="file-list glass-effect rounded-xl p-4"></div>
+            </div>
+        </div>
+
+        <!-- Chapter Management Tab -->
+        <div id="chapter-management" class="tab-content glass-effect rounded-xl p-6 mb-4 hidden card-hover relative z-20">
+            <h2 class="text-xl font-semibold mb-4 text-white flex items-center">
+                <i class="fas fa-book mr-2 text-blue-300 text-xl"></i>章节管理
+            </h2>
+            
+            <div class="flex flex-col lg:flex-row gap-6">
+                <!-- 章节列表侧栏 -->
+                <div class="w-full lg:w-1/3">
+                    <div class="mb-4 flex gap-3">
+                        <button onclick="loadChaptersList()" class="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-4 py-2 rounded-lg transition-all duration-200 future-glow">
+                            <i class="fas fa-sync mr-2"></i>刷新
+                        </button>
+                        <button onclick="regenerateChapterScenes()" class="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-4 py-2 rounded-lg transition-all duration-200 future-glow">
+                            <i class="fas fa-redo mr-2"></i>重试章节
+                        </button>
+                    </div>
+                    <div id="chaptersList" class="glass-effect rounded-xl p-4 h-96 overflow-y-auto">
+                        <p class="text-gray-400 text-center py-4">加载中...</p>
+                    </div>
+                </div>
+                
+                <!-- 场景列表主区域 -->
+                <div class="w-full lg:w-2/3">
+                    <div class="mb-4">
+                        <h3 id="selectedChapterTitle" class="text-lg font-medium text-white">请选择章节</h3>
+                        <div class="flex gap-3 mt-2">
+                            <button onclick="refreshScenesList()" class="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-4 py-2 rounded-lg transition-all duration-200 future-glow">
+                                <i class="fas fa-sync mr-2"></i>刷新场景
+                            </button>
+                        </div>
+                    </div>
+                    <div id="scenesList" class="glass-effect rounded-xl p-4 h-96 overflow-y-auto">
+                        <p class="text-gray-400 text-center py-4">请先选择一个章节</p>
+                    </div>
+                </div>
             </div>
         </div>
 

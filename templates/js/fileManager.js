@@ -948,27 +948,7 @@ function executeTool(toolName) {
         });
 }
 
-function oneClickFilm() {
-    // 从localStorage获取保存的风格设置
-    const savedTemplateId = localStorage.getItem('selectedStyleTemplateId') || '';
 
-    fetch('/api/one-click-film', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            prompt_template_id: savedTemplateId || null
-        })
-    })
-        .then(response => response.json())
-        .then(data => {
-            console.log('一键出片工作流已启动:', data);
-        })
-        .catch(error => {
-            console.error('一键出片执行错误:', error);
-        });
-}
 
 function stopExecution() {
     fetch('/api/stop', {

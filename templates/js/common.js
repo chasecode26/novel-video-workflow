@@ -70,8 +70,8 @@ function switchTab(tabName) {
     else if (tabName === 'filemanager') {
         loadFileManager();
     }
-    // 如果切换到章节场景管理标签，则加载章节列表
-    else if (tabName === 'scene-management') {
+    // 如果切换到章节管理标签，则加载章节列表
+    else if (tabName === 'chapter-management') {
         loadChaptersList();
     }
 }
@@ -110,6 +110,20 @@ document.addEventListener('DOMContentLoaded', function() {
         loadSavedSettings();
     }
 });
+
+// 初始化 - 加载工具列表
+window.onload = function() {
+    // 在初始状态下加载工具列表
+    if (document.querySelector('.nav-tab.active').textContent.includes('MCP 工具')) {
+        loadToolsList();
+    }
+
+    // 加载风格模板选择器
+    loadStyleTemplates();
+    
+    // 加载保存的设置
+    loadSavedSettings();
+};
 
 // 设置视频背景
 function setupVideoBackground() {

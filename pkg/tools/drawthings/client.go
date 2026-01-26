@@ -12,16 +12,17 @@ import (
 	"path/filepath"
 	"time"
 
+	"novel-video-workflow/pkg/database"
+
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"novel-video-workflow/pkg/database"
 )
 
 // 全局常量定义
 const (
 	// 悬疑风格附加描述 - 用于图像生成时的风格增强
 	SuspenseStyleAddon = ", 周围环境模糊成黑影, 空气凝滞,浅景深, 胶片颗粒感, 低饱和度，极致悬疑氛围, 阴沉窒息感, 夏季，环境阴霾，其他部分模糊不可见"
-	
+
 	// 负面提示词 - 用于避免不想要的图像元素
 	NegativePrompt = "人脸特写，半身像，模糊，比例失调，原参考图背景，比例失调，缺肢"
 )
@@ -299,7 +300,7 @@ func (c *DrawThingsClient) SaveImageFromBase64(base64Data, filePath string) erro
 // GenerateImageFromText 根据文本生成图像
 func (c *DrawThingsClient) GenerateImageFromText(text, outputFile string, width, height int, isSuspense bool, templateName string) error {
 	// 先检查API是否可用
-	c.BroadcastService.SendMessage("ollama整合后的提示词", fmt.Sprintf("内容：%s", text), broadcast.GetTimeStr())
+	c.BroadcastService.SendMessage("ollama镜头提示词", fmt.Sprintf("内容：%s", text), broadcast.GetTimeStr())
 
 	if !c.APIAvailable {
 		if !c.CheckAPIAvailability() {
@@ -388,6 +389,7 @@ func (c *DrawThingsClient) GenerateImageFromTextWithDefaultTemplate(text, output
 func (c *DrawThingsClient) GenerateImageFromImageWithDefaultTemplate(initImagePath, text, outputFile string, width, height int, isSuspense bool) error {
 	return c.GenerateImageFromImage(initImagePath, text, outputFile, width, height, isSuspense, "悬疑惊悚")
 }
+
 // GenerateImageFromImage 根据参考图像生成新图像
 func (c *DrawThingsClient) GenerateImageFromImage(initImagePath, text, outputFile string, width, height int, isSuspense bool, templateName string) error {
 	// 读取参考图像并编码为Base64

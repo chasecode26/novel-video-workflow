@@ -122,10 +122,6 @@ type OllamaResponse struct {
 	PromptDuration float64 `json:"prompt_duration,omitempty"`
 }
 
-func (c *OllamaClient) SendMsg(text string) {
-	c.BroadcastService.SendMessage("Ollama", text, broadcast.GetTimeStr())
-}
-
 // GenerateImagePrompt 生成图像提示词
 func (c *OllamaClient) GenerateImagePrompt(text, style string) (string, error) {
 	return c.GenerateImagePromptWithTemplate(text, style, "")
@@ -137,8 +133,7 @@ func (c *OllamaClient) GenerateImagePromptWithTemplate(text, style, templateName
 		zap.String("text", text),
 		zap.String("style", style),
 		zap.String("template", templateName))
-
-	c.SendMsg(fmt.Sprintf("开始使用Ollama生成图像提示词:风格：%s,模板:%s,内容：%s", style, templateName, text))
+	c.BroadcastService.SendMessage("Ollama", fmt.Sprintf("开始使用Ollama生成图像提示词:风格：%s,模板:%s,内容：%s", style, templateName, text), broadcast.GetTimeStr())
 
 	// 如果指定了模板名称，则从数据库获取模板
 	var systemPrompt, userPrompt string
@@ -181,7 +176,8 @@ func (c *OllamaClient) GenerateImagePromptWithTemplate(text, style, templateName
 	c.Logger.Info("发送Ollama请求生成图像提示词",
 		zap.String("endpoint", endpoint),
 		zap.String("model", request.Model))
-	c.SendMsg(fmt.Sprintf("发送Ollama请求生成图像提示词:节点：%s,模型:%s，【系统】%s,【用户】%s", endpoint, request.Model, systemPrompt, userPrompt))
+
+	c.BroadcastService.SendMessage("Ollama", fmt.Sprintf("🧬发送Ollama请求生成图像提示词:节点：%s,模型:%s，【系统】%s,【用户】%s", endpoint, request.Model, systemPrompt, userPrompt), broadcast.GetTimeStr())
 
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(payload))
 	if err != nil {
@@ -194,7 +190,7 @@ func (c *OllamaClient) GenerateImagePromptWithTemplate(text, style, templateName
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		c.Logger.Error("发送Ollama请求失败", zap.Error(err))
-		c.SendMsg(fmt.Sprintf("发送Ollama请求失败:%s", err.Error()))
+		c.BroadcastService.SendMessage("Ollama", fmt.Sprintf("发送Ollama请求失败:%s", err.Error()), broadcast.GetTimeStr())
 
 		return "", fmt.Errorf("发送请求失败: %v", err)
 	}
@@ -221,8 +217,7 @@ func (c *OllamaClient) GenerateImagePromptWithTemplate(text, style, templateName
 	// 清理响应内容
 	prompt := strings.TrimSpace(ollamaResp.Response)
 	c.Logger.Info("成功生成图像提示词", zap.String("prompt", prompt))
-	c.SendMsg(fmt.Sprintf("成功返回提示词:%s", prompt))
-
+	c.BroadcastService.SendMessage("Ollama", fmt.Sprintf("DNA:成功返回提示词:%s", prompt), broadcast.GetTimeStr())
 	return prompt, nil
 }
 
@@ -318,6 +313,7 @@ func (c *OllamaClient) AnalyzeScenesAndGeneratePrompts(content, style string, es
 		err := json.Unmarshal([]byte(responseText), &prompts)
 		if err == nil {
 			c.Logger.Info("成功解析分镜提示词JSON", zap.Int("scene_count", len(prompts)))
+			c.BroadcastService.SendMessage("🍭Ollama整章节分镜返回", fmt.Sprintf("DNA:成功返回提示词:%s", prompts), broadcast.GetTimeStr())
 			return prompts, nil
 		}
 	}
@@ -331,6 +327,7 @@ func (c *OllamaClient) AnalyzeScenesAndGeneratePrompts(content, style string, es
 		err := json.Unmarshal([]byte(jsonStr), &prompts)
 		if err == nil {
 			c.Logger.Info("成功解析分镜提示词JSON", zap.Int("scene_count", len(prompts)))
+			c.BroadcastService.SendMessage("🍭Ollama整章节分镜返回", fmt.Sprintf("DNA:成功返回提示词:%s", prompts), broadcast.GetTimeStr())
 			return prompts, nil
 		}
 	}
@@ -359,5 +356,6 @@ func (c *OllamaClient) AnalyzeScenesAndGeneratePrompts(content, style string, es
 	}
 
 	c.Logger.Info("生成分镜提示词（非JSON格式）", zap.Int("scene_count", len(prompts)))
+	c.BroadcastService.SendMessage("🍭Ollama整章节分镜返回", fmt.Sprintf("DNA:成功返回提示词:%s", prompts), broadcast.GetTimeStr())
 	return prompts, nil
 }

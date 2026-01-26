@@ -391,6 +391,37 @@ function deleteScene(sceneId) {
     }
 }
 
+// 重试章节工作流
+function retryChapter() {
+    if (!currentSelectedChapterId) {
+        alert('请先选择一个章节');
+        return;
+    }
+
+    if (confirm('确定要重试此章节的工作流吗？这将重新执行章节处理流程。')) {
+        fetch('/api/chapters/' + currentSelectedChapterId + '/retry', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({})
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert('章节重试已启动');
+                loadScenesList(currentSelectedChapterId); // 刷新场景列表
+            } else {
+                alert('重试章节失败: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('重试章节失败:', error);
+            alert('重试章节失败: ' + error.message);
+        });
+    }
+}
+
 // 重新生成章节场景
 function regenerateChapterScenes() {
     if (!currentSelectedChapterId) {

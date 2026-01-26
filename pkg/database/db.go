@@ -68,7 +68,7 @@ func migrateDB(db *gorm.DB) error {
 		return fmt.Errorf("检查chapters表结构失败: %v", err)
 	}
 	defer rows.Close()
-	
+
 	var columnExists = false
 	for rows.Next() {
 		var cid int
@@ -85,7 +85,7 @@ func migrateDB(db *gorm.DB) error {
 			break
 		}
 	}
-	
+
 	if !columnExists {
 		if err := db.Exec("ALTER TABLE chapters ADD COLUMN workflow_params TEXT").Error; err != nil {
 			return fmt.Errorf("添加workflow_params列失败: %v", err)
@@ -97,28 +97,28 @@ func migrateDB(db *gorm.DB) error {
 
 // ensureSceneTableColumns 确保Scene表包含所有必需的列
 func ensureSceneTableColumns(db *gorm.DB) error {
-	// 检查并添加缺失的列，使用 GORM 的 AutoMigrate 来处理 SQLite 的兼容性
+	// 使用完整的场景结构进行迁移
 	type TempScene struct {
 		gorm.Model
-		Title            string    `gorm:"column:title"`
-		Description      string    `gorm:"column:description"`
-		Prompt           string    `gorm:"column:prompt"`
-		SegmentationInfo string    `gorm:"column:segmentation_info;type:text"`
-		OriginalText     string    `gorm:"column:original_text;type:text"`
-		OllamaRequest    string    `gorm:"column:ollama_request;type:text"`
-		OllamaResponse   string    `gorm:"column:ollama_response;type:text"`
-		DrawThingsConfig string    `gorm:"column:draw_things_config;type:text"`
-		DrawThingsResult string    `gorm:"column:draw_things_result;type:text"`
-		ChapterID        uint      `gorm:"column:chapter_id;not null"`
-		ImageURL         string    `gorm:"column:image_url"`
-		AudioURL         string    `gorm:"column:audio_url"`
-		RetryCount       int       `gorm:"column:retry_count;default:0"`
-		Order            int       `gorm:"column:order"`
-		// 新增字段
-		WorkflowDetails string    `gorm:"column:workflow_details;type:text"`
-		Status          string    `gorm:"column:status;default:'pending'"`
-		StartTime       time.Time `gorm:"column:start_time"`
-		EndTime         time.Time `gorm:"column:end_time"`
+		Title            string `json:"title"`
+		Description      string `json:"description"`        // 场景文本
+		Prompt           string `json:"prompt"`             // 场景提示词
+		SegmentationInfo string `json:"segmentation_info"`  // 智能分镜信息
+		OriginalText     string `json:"original_text"`      // 发送给Ollama的原始描述文本
+		OllamaRequest    string `json:"ollama_request"`     // 发送给Ollama的请求JSON
+		OllamaResponse   string `json:"ollama_response"`    // Ollama返回的结果JSON
+		DrawThingsConfig string `json:"draw_things_config"` // 发送给DrawThings的配置JSON
+		DrawThingsResult string `json:"draw_things_result"` // DrawThings返回的结果JSON
+		ChapterID        uint   `json:"chapter_id"`
+		ImageURL         string `json:"image_url"`               // 生成的图像URL
+		AudioURL         string `json:"audio_url"`               // 生成的音频URL
+		RetryCount       int    `json:"retry_count"`             // 重试次数
+		Sort             int    `json:"sort" gorm:"column:sort"` // 场景顺序，映射到sort列
+		// 新增字段用于记录工作流详细参数
+		WorkflowDetails string    `json:"workflow_details" gorm:"type:text"` // 工作流详细参数，JSON格式
+		Status          string    `json:"status" gorm:"default:'pending'"`   // 场景状态: pending, processing, completed, failed
+		StartTime       time.Time `json:"start_time"`                        // 开始处理时间
+		EndTime         time.Time `json:"end_time"`                          // 结束处理时间
 	}
 
 	// 使用 AutoMigrate 来自动创建或更新表结构
@@ -233,6 +233,33 @@ func GetChaptersByProjectID(projectID uint) ([]Chapter, error) {
 	return chapters, nil
 }
 
+// GetAllChapters 获取所有章节
+func GetAllChapters() ([]Chapter, error) {
+	var chapters []Chapter
+	result := DB.Preload("Scenes").Find(&chapters)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return chapters, nil
+}
+
+// ResetChapterStatus 重置章节状态，用于重试功能
+func ResetChapterStatus(id uint) error {
+	// 重置章节状态
+	err := DB.Model(&Chapter{}).Where("id = ?", id).Update("workflow_params", "").Error
+	if err != nil {
+		return err
+	}
+
+	// 重置相关场景的状态
+	err = DB.Model(&Scene{}).Where("chapter_id = ?", id).Updates(map[string]interface{}{
+		"status":           "pending",
+		"workflow_details": "",
+	}).Error
+
+	return err
+}
+
 // UpdateChapter 更新章节
 func UpdateChapter(id uint, updates map[string]interface{}) error {
 	// 如果更新了图片路径，需要确保它是有效的JSON数组
@@ -264,7 +291,7 @@ func DeleteChapter(id uint) error {
 }
 
 // CreateScene 创建场景
-func CreateScene(chapterID uint, title, description, prompt, ollamaRequest, ollamaResponse, drawThingsConfig, drawThingsResult string, order int) (*Scene, error) {
+func CreateScene(chapterID uint, title, description, prompt, ollamaRequest, ollamaResponse, drawThingsConfig, drawThingsResult string, sort int) (*Scene, error) {
 	scene := &Scene{
 		Title:            title,
 		Description:      description,
@@ -274,7 +301,7 @@ func CreateScene(chapterID uint, title, description, prompt, ollamaRequest, olla
 		DrawThingsConfig: drawThingsConfig,
 		DrawThingsResult: drawThingsResult,
 		ChapterID:        chapterID,
-		Order:            order,
+		Sort:             sort,
 	}
 
 	result := DB.Create(scene)
@@ -298,7 +325,8 @@ func GetSceneByID(id uint) (*Scene, error) {
 // GetScenesByChapterID 获取章节下的所有场景
 func GetScenesByChapterID(chapterID uint) ([]Scene, error) {
 	var scenes []Scene
-	result := DB.Where("chapter_id = ?", chapterID).Order("order ASC").Find(&scenes)
+	// 查询场景，按sort字段排序
+	result := DB.Where("chapter_id = ?", chapterID).Order("sort ASC").Find(&scenes)
 	if result.Error != nil {
 		return nil, result.Error
 	}

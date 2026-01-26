@@ -1,7 +1,7 @@
 package web_server
 
 import (
-	"encoding/base64"
+	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -16,11 +16,13 @@ import (
 	"novel-video-workflow/pkg/tools/file"
 	"novel-video-workflow/pkg/tools/indextts2"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	api_pkg "novel-video-workflow/pkg/api"
@@ -198,27 +200,49 @@ func wsEndpoint(c *gin.Context) {
 		log.Printf("WebSocket upgrade error: %v", err)
 		return
 	}
-	defer ws.Close()
+
+	// 确保在函数结束时关闭连接
+	defer func() {
+		log.Printf("WebSocket connection closing")
+		ws.Close()
+	}()
 
 	// 添加客户端到全局广播服务
 	clientChan := broadcast.GlobalBroadcastService.RegisterClient(ws)
+
+	// 确保在函数结束时注销客户端
 	defer func() {
-		// 从全局广播服务注销客户端
+		log.Printf("Unregistering client from broadcast service")
 		client := &broadcast.Client{Conn: ws, Send: clientChan}
 		broadcast.GlobalBroadcastService.UnregisterClient(client)
 	}()
 
 	// 启动goroutine处理来自广播服务的消息
+	messageGoroutineDone := make(chan bool, 1)
 	go func() {
-		for message := range clientChan {
-			// 直接发送消息，因为现在BroadcastMessage已经包含了前端期望的字段
-			if err := ws.WriteJSON(message); err != nil {
-				log.Printf("Error sending message to client: %v", err)
-				return
+		defer func() {
+			log.Printf("Goroutine handling broadcast messages ending")
+			messageGoroutineDone <- true
+		}()
+
+		for {
+			select {
+			case message, ok := <-clientChan:
+				if !ok {
+					// 通道已关闭，退出循环
+					log.Printf("Client channel closed, exiting message loop")
+					return
+				}
+				// 直接发送消息，因为现在BroadcastMessage已经包含了前端期望的字段
+				if err := ws.WriteJSON(message); err != nil {
+					log.Printf("Error sending message to client: %v", err)
+					return
+				}
 			}
 		}
 	}()
 
+	// 处理从客户端接收的消息
 	for {
 		var msg map[string]interface{}
 		err := ws.ReadJSON(&msg)
@@ -228,6 +252,10 @@ func wsEndpoint(c *gin.Context) {
 		}
 		// 可以处理从客户端发送的消息，如果需要的话
 	}
+
+	// 等待消息处理goroutine结束
+	<-messageGoroutineDone
+	log.Printf("WebSocket connection fully closed and cleaned up")
 }
 
 func apiToolsHandler(c *gin.Context) {
@@ -1052,33 +1080,33 @@ func (b *BroadcastLoggerAdapter) Write(entry zapcore.Entry, fields []zapcore.Fie
 
 // updateChapterAudio 更新章节的音频URL
 func (wp *WorkflowProcessor) updateChapterAudio(chapterID uint, audioURL string) error {
-    return database.DB.Model(&database.Chapter{}).Where("id = ?", chapterID).Update("audio_url", audioURL).Error
+	return database.DB.Model(&database.Chapter{}).Where("id = ?", chapterID).Update("audio_url", audioURL).Error
 }
 
 // updateChapterImages 更新章节的图像路径
 func (wp *WorkflowProcessor) updateChapterImages(chapterID uint, imagePaths string) error {
-    return database.DB.Model(&database.Chapter{}).Where("id = ?", chapterID).Update("image_paths", imagePaths).Error
+	return database.DB.Model(&database.Chapter{}).Where("id = ?", chapterID).Update("image_paths", imagePaths).Error
 }
 
 // getImageFilesFromDir 从目录中获取图像文件列表
 func (wp *WorkflowProcessor) getImageFilesFromDir(dir string) ([]string, error) {
-    var imageFiles []string
-    files, err := os.ReadDir(dir)
-    if err != nil {
-        return nil, err
-    }
+	var imageFiles []string
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
 
-    for _, file := range files {
-        if !file.IsDir() {
-            ext := strings.ToLower(filepath.Ext(file.Name()))
-            if ext == ".png" || ext == ".jpg" || ext == ".jpeg" {
-                imagePath := filepath.Join(dir, file.Name())
-                imageFiles = append(imageFiles, imagePath)
-            }
-        }
-    }
+	for _, file := range files {
+		if !file.IsDir() {
+			ext := strings.ToLower(filepath.Ext(file.Name()))
+			if ext == ".png" || ext == ".jpg" || ext == ".jpeg" {
+				imagePath := filepath.Join(dir, file.Name())
+				imageFiles = append(imageFiles, imagePath)
+			}
+		}
+	}
 
-    return imageFiles, nil
+	return imageFiles, nil
 }
 
 func webServerMain() {
@@ -1135,6 +1163,17 @@ func webServerMain() {
 	r.GET("/api/workflow/scene/:id/params", workflowTrackingAPI.GetSceneWorkflowParams)
 	r.GET("/api/chapter/:id/scenes", workflowTrackingAPI.GetScenesByChapter)
 
+	// 章节和场景管理相关路由
+	chapterSceneAPI := api_pkg.NewChapterSceneAPI()
+	r.GET("/api/chapters", chapterSceneAPI.GetChapters)
+	r.GET("/api/chapters/:id", chapterSceneAPI.GetChapterByID)
+	r.PUT("/api/chapters/:id", chapterSceneAPI.UpdateChapter)
+	r.GET("/api/chapters/:id/scenes", chapterSceneAPI.GetScenesByChapterID)
+	r.GET("/api/scenes/:id", chapterSceneAPI.GetSceneByID)
+	r.PUT("/api/scenes/:id", chapterSceneAPI.UpdateScene)
+	r.POST("/api/chapters/:id/retry", chapterSceneAPI.RetryChapter)
+	r.POST("/api/scenes/:id/retry", chapterSceneAPI.RetryScene)
+
 	// 添加文件管理API端点
 	r.GET("/api/files/list", fileListHandler)
 	r.GET("/api/files/content", fileContentHandler)
@@ -1180,11 +1219,34 @@ func webServerMain() {
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", port),
 		Handler:      r,
-		ReadTimeout:  15 * time.Millisecond, // 读取请求头最大耗时
-		WriteTimeout: 15 * time.Millisecond, // 写响应最大耗时
-		IdleTimeout:  15 * time.Second,      // 空闲连接保持时间
+		ReadTimeout:  15 * time.Minute, // 读取请求头最大耗时
+		WriteTimeout: 15 * time.Minute, // 写响应最大耗时
+		IdleTimeout:  15 * time.Second, // 空闲连接保持时间
 	}
-	srv.ListenAndServe()
+
+	// 为服务器关闭创建一个goroutine
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("服务器运行出错: %v", err)
+		}
+	}()
+
+	// 等待中断信号来优雅关闭服务器
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("接收到关闭信号，正在关闭服务器...")
+
+	// 创建关闭上下文，最多等待5秒
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// 优雅关闭服务器
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("服务器关闭失败: %v", err)
+	} else {
+		log.Println("服务器已成功关闭")
+	}
 }
 
 // StartServer 启动Web服务器
@@ -1239,7 +1301,8 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 			promptGenerationStartTime := time.Now()
 			optimizedPrompt, err := wp.drawThingsGen.OllamaClient.GenerateImagePrompt(paragraph, styleDesc)
 			promptGenerationEndTime := time.Now()
-			
+
+			//手工拆分
 			if err != nil {
 				wp.logger.Warn("使用Ollama生成图像提示词失败，使用原始文本",
 					zap.Int("paragraph_index", idx),
@@ -1250,21 +1313,21 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 
 			// 准备DrawThings请求参数
 			drawThingsConfig := map[string]interface{}{
-				"prompt":         optimizedPrompt,
-				"width":          512,
-				"height":         896,
-				"negative_prompt":  ",人脸特写，半身像，模糊，比例失调，原参考图背景，比例失调，缺肢",
-				"steps":          8,
-				"sampler_name":   "DPM++ 2M Trailing",
-				"guidance_scale": 1.0,
-				"batch_size":     1,
-				"model":          "z_image_turbo_1.0_q6p.ckpt",
-				"is_suspense":    true,
+				"prompt":          optimizedPrompt,
+				"width":           512,
+				"height":          896,
+				"negative_prompt": ",人脸特写，半身像，模糊，比例失调，原参考图背景，比例失调，缺肢",
+				"steps":           8,
+				"sampler_name":    "DPM++ 2M Trailing",
+				"guidance_scale":  1.0,
+				"batch_size":      1,
+				"model":           "z_image_turbo_1.0_q6p.ckpt",
+				"is_suspense":     true,
 			}
 			drawThingsConfigBytes, _ := json.Marshal(drawThingsConfig)
-			
-			imageFile := filepath.Join(imagesDir, fmt.Sprintf("paragraph_%02d.png", idx+1))
 
+			imageFile := filepath.Join(imagesDir, fmt.Sprintf("paragraph_%02d.png", idx+1))
+			wp.logger.Info(fmt.Sprintf("📸开始生成段落图像: %d", idx+1))
 			err = wp.drawThingsGen.Client.GenerateImageFromTextWithDefaultTemplate(
 				optimizedPrompt,
 				imageFile,
@@ -1272,7 +1335,7 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 				896,   // 缩小高度
 				false, // 风格已在提示词中处理
 			)
-			
+
 			drawThingsResult := map[string]interface{}{
 				"image_file": imageFile,
 				"success":    err == nil,
@@ -1310,12 +1373,12 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 				ImageURL:         imageFile,
 				AudioURL:         "",
 				RetryCount:       0,
-				Order:            idx + 1,
+				Sort:             idx + 1,
 				StartTime:        promptGenerationStartTime,
 				EndTime:          time.Now(),
 				Status:           "completed",
 			}
-			
+
 			// 记录工作流详细参数
 			workflowDetails := map[string]interface{}{
 				"ollama_analysis": map[string]interface{}{
@@ -1344,7 +1407,7 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 					"status":          "completed",
 				},
 			}
-			
+
 			workflowDetailsBytes, _ := json.Marshal(workflowDetails)
 			scene.WorkflowDetails = string(workflowDetailsBytes)
 
@@ -1363,44 +1426,26 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 
 	// 如果Ollama分镜分析成功，使用生成的分镜描述生成图像
 	wp.logger.Info("Ollama分镜分析成功", zap.Int("scene_count", len(sceneDescriptions)))
-	for idx, sceneDesc := range sceneDescriptions {
-		imageFile := filepath.Join(imagesDir, fmt.Sprintf("scene_%02d.png", idx+1))
-
-		// 使用分镜描述生成图像
-		err = wp.drawThingsGen.Client.GenerateImageFromTextWithDefaultTemplate(
-			sceneDesc,
-			imageFile,
-			512,   // 缩小宽度
-			896,   // 缩小高度
-			false, // 风格已在提示词中处理
-		)
-		if err != nil {
-			wp.logger.Warn("生成分镜图像失败", zap.String("scene", sceneDesc[:min(len(sceneDesc), 50)]), zap.Error(err))
-			fmt.Printf("⚠️  分镜图像生成失败: %v\n", err)
-		} else {
-			fmt.Printf("✅ 分镜图像生成完成: %s\n", imageFile)
-		}
-	}
 
 	// 将场景数据保存到数据库
 	for idx, sceneDesc := range sceneDescriptions {
 		imageFile := filepath.Join(imagesDir, fmt.Sprintf("scene_%02d.png", idx+1))
-		
+
 		// 准备DrawThings请求参数
 		drawThingsConfig := map[string]interface{}{
-			"prompt":         sceneDesc,
-			"width":          512,
-			"height":         896,
-			"negative_prompt":  ",人脸特写，半身像，模糊，比例失调，原参考图背景，比例失调，缺肢",
-			"steps":          8,
-			"sampler_name":   "DPM++ 2M Trailing",
-			"guidance_scale": 1.0,
-			"batch_size":     1,
-			"model":          "z_image_turbo_1.0_q6p.ckpt",
-			"is_suspense":    true,
+			"prompt":          sceneDesc,
+			"width":           512,
+			"height":          896,
+			"negative_prompt": ",人脸特写，半身像，模糊，比例失调，原参考图背景，比例失调，缺肢",
+			"steps":           8,
+			"sampler_name":    "DPM++ 2M Trailing",
+			"guidance_scale":  1.0,
+			"batch_size":      1,
+			"model":           "z_image_turbo_1.0_q6p.ckpt",
+			"is_suspense":     true,
 		}
 		drawThingsConfigBytes, _ := json.Marshal(drawThingsConfig)
-		
+
 		// 使用分镜描述生成图像
 		err = wp.drawThingsGen.Client.GenerateImageFromTextWithDefaultTemplate(
 			sceneDesc,
@@ -1409,7 +1454,7 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 			896,   // 缩小高度
 			false, // 风格已在提示词中处理
 		)
-		
+
 		drawThingsResult := map[string]interface{}{
 			"image_file": imageFile,
 			"success":    err == nil,
@@ -1423,7 +1468,7 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 		} else {
 			fmt.Printf("✅ 分镜图像生成完成: %s\n", imageFile)
 		}
-		
+
 		// 准备Ollama请求参数（分镜分析）
 		sceneAnalysisStartTime := time.Now() // 假设分析时间就是现在
 		ollamaRequest := map[string]interface{}{
@@ -1449,12 +1494,12 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 			ImageURL:         imageFile,
 			AudioURL:         "",
 			RetryCount:       0,
-			Order:            idx + 1,
+			Sort:             idx + 1,
 			StartTime:        sceneAnalysisStartTime,
 			EndTime:          time.Now(),
 			Status:           "completed",
 		}
-		
+
 		// 记录工作流详细参数
 		workflowDetails := map[string]interface{}{
 			"ollama_analysis": map[string]interface{}{
@@ -1466,7 +1511,7 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 				},
 				"response": map[string]interface{}{
 					"scene_descriptions": sceneDescriptions,
-					"timestamp":         time.Now().Format(time.RFC3339),
+					"timestamp":          time.Now().Format(time.RFC3339),
 				},
 			},
 			"drawthings_generation": map[string]interface{}{
@@ -1475,15 +1520,15 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 				"timestamp": time.Now().Format(time.RFC3339),
 			},
 			"execution_info": map[string]interface{}{
-				"scene_index":    idx,
-				"scene_text":     sceneDesc[:min(len(sceneDesc), 200)],
-				"chapter_id":     chapterID,
-				"image_file":     imageFile,
-				"status":         "completed",
-				"total_scenes":   len(sceneDescriptions),
+				"scene_index":  idx,
+				"scene_text":   sceneDesc[:min(len(sceneDesc), 200)],
+				"chapter_id":   chapterID,
+				"image_file":   imageFile,
+				"status":       "completed",
+				"total_scenes": len(sceneDescriptions),
 			},
 		}
-		
+
 		workflowDetailsBytes, _ := json.Marshal(workflowDetails)
 		scene.WorkflowDetails = string(workflowDetailsBytes)
 
@@ -1493,8 +1538,10 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 			fmt.Printf("❌ 保存场景到数据库失败: %v\n", result.Error)
 		} else {
 			wp.logger.Info("场景已保存到数据库", zap.Uint("scene_id", scene.ID), zap.Uint("chapter_id", chapterID))
-			fmt.Printf("✅ 场景已保存到数据库，ID: %d\n", scene.ID)
+			fmt.Printf("✅ 场景已保存到数据库(%d/%d)，ID: %d\n", idx+1, len(sceneDescriptions), scene.ID)
+			wp.drawThingsGen.OllamaClient.BroadcastService.SendMessage("分镜", fmt.Sprintf("🖥 场景已保存到数据库(%d/%d)，ID: %d\n", idx, len(sceneDescriptions), scene.ID), broadcast.GetTimeStr())
 		}
+		wp.drawThingsGen.OllamaClient.BroadcastService.SendMessage("分镜", fmt.Sprintf("场景 %s 生成完成", fmt.Sprintf("scene_%02d.png", idx+1)), broadcast.GetTimeStr())
 	}
 
 	return nil
@@ -1578,6 +1625,7 @@ func min(a, b int) int {
 
 // 一键出片功能 - 完整工作流处理
 func oneClickFilmHandler(c *gin.Context) {
+
 	var reqBody map[string]interface{}
 	err := json.NewDecoder(c.Request.Body).Decode(&reqBody)
 	if err != nil {
@@ -1606,15 +1654,12 @@ func oneClickFilmHandler(c *gin.Context) {
 					GlobalStyle = selectedTemplate.StyleAddon
 					AdditionalPrompt = ", " + selectedTemplate.StyleAddon
 				}
-				broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] 使用提示词模板: %s", selectedTemplate.Name), broadcast.GetTimeStr())
+				broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("🫧🛠[一键出片] 使用提示词模板: %s", selectedTemplate.Name), broadcast.GetTimeStr())
 			}
 		}
 	} else {
 		broadcast.GlobalBroadcastService.SendLog("movie", "[一键出片] 未选择特定提示词模板，使用默认风格", broadcast.GetTimeStr())
 	}
-
-	// 直接执行完整工作流处理，不使用goroutine以便调试
-	broadcast.GlobalBroadcastService.SendLog("movie", "开始执行一键出片完整工作流...", broadcast.GetTimeStr())
 
 	// 获取项目根目录
 	wd, err := os.Getwd()
@@ -1644,314 +1689,287 @@ func oneClickFilmHandler(c *gin.Context) {
 		return
 	}
 
-	// 获取前端可能传递的特定项目名称
-	specifiedProjectName, _ := reqBody["project_name"].(string)
+	if len(items) != 1 {
+		broadcast.GlobalBroadcastService.SendLog("movie", "[一键出片] ❌ input目录下有多个文件，请只放置一个小说目录", broadcast.GetTimeStr())
+		c.JSON(http.StatusOK, gin.H{"status": "error", "message": "input目录下有多个文件，请只放置一个小说文件"})
+		return
+	}
+	if !items[0].IsDir() {
+		broadcast.GlobalBroadcastService.SendLog("movie", "[一键出片] ❌ input目录下有文件，请只放置一个小说目录", broadcast.GetTimeStr())
+	}
+	novelDir := filepath.Join(inputDir, items[0].Name())
 
-	// 遍历input目录寻找小说目录
-	for _, item := range items {
-		// 如果指定了特定项目，只处理该特定项目；否则处理第一个项目
-		if specifiedProjectName != "" && item.Name() != specifiedProjectName {
-			continue
+	// 检查是否是 chapter_XX 格式的目录（即已经分割好的章节）
+	if isChapterDirectory(items[0].Name()) {
+		// 直接处理这个章节目录
+		processChapterDirectory(novelDir, items[0].Name(), projectRoot, c, broadcast.GlobalBroadcastService)
+	} else {
+		// 原有的处理逻辑：在小说目录中寻找对应的小说文件
+		novelFiles, err := os.ReadDir(novelDir)
+		if err != nil {
+			broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 无法读取小说目录 %s: %v", items[0].Name(), err), broadcast.GetTimeStr())
 		}
-		
-		if item.IsDir() { // 只处理目录
-			novelDir := filepath.Join(inputDir, item.Name())
+		broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf(" 🔊 novelFiles 有几个: %d", len(novelFiles)), broadcast.GetTimeStr())
 
-			// 在小说目录中寻找对应的小说文件
-			novelFiles, err := os.ReadDir(novelDir)
+		if len(novelFiles) == 0 {
+			broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 小说目录 %s 为空", items[0].Name()), broadcast.GetTimeStr())
+			return
+		}
+		if len(novelFiles) > 1 {
+			broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 小说目录 %s 中有多个文件，请手动处理", items[0].Name()), broadcast.GetTimeStr())
+			return
+		}
+		novelFile := novelFiles[0]
+		// 寻找与目录名匹配的.txt文件（例如 幽灵客栈/幽灵客栈.txt）
+		expectedFileName := items[0].Name() + ".txt"
+		if !novelFile.IsDir() && strings.EqualFold(novelFile.Name(), expectedFileName) {
+			broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf(" 🔊 是文本，且文本名字与目录名字相同: %s", items[0].Name()), broadcast.GetTimeStr())
+			absPath := filepath.Join(novelDir, novelFile.Name())
+			broadcast.GlobalBroadcastService.SendLog("movie", "[一键出片] 🧪 开始测试章节编号解析功能...", broadcast.GetTimeStr())
+
+			// 创建FileManager实例
+			fm := file.NewFileManager()
+			broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] 📖 处理小说文件: %s", novelFile.Name()), broadcast.GetTimeStr())
+
+			// 读取输入目录中的小说 - 这会生成chapter_XX目录
+			_, err = fm.CreateInputChapterStructure(absPath)
 			if err != nil {
-				broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 无法读取小说目录 %s: %v", item.Name(), err), broadcast.GetTimeStr())
-				continue
+				broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 处理小说文件失败: %v", err), broadcast.GetTimeStr())
+
+				c.JSON(http.StatusOK, gin.H{"status": "error", "message": fmt.Sprintf("处理小说文件失败: %v", err)})
+				return
+			}
+			/* 1.=================== 创建输出目录结构=======================================*/
+
+			// 创建输出目录结构
+			fm.CreateOutputChapterStructure(inputDir)
+			broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[输出目录的名字] 📖 输出目录的名字: %v", inputDir), broadcast.GetTimeStr())
+
+			// 重新读取novelDir目录，查找chapter_XX子目录
+			newNovelFiles, err := os.ReadDir(novelDir)
+			if err != nil {
+				broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 无法重新读取小说目录 %s: %v", items[0].Name(), err), broadcast.GetTimeStr())
 			}
 
-			// 寻找与目录名匹配的.txt文件（例如 幽灵客栈/幽灵客栈.txt）
-			for _, novelFile := range novelFiles {
-				expectedFileName := item.Name() + ".txt"
-				if !novelFile.IsDir() && strings.EqualFold(novelFile.Name(), expectedFileName) {
-					absPath := filepath.Join(novelDir, novelFile.Name())
-					broadcast.GlobalBroadcastService.SendLog("movie", "[一键出片] 🧪 开始测试章节编号解析功能...", broadcast.GetTimeStr())
-
-					// 创建FileManager实例
-					fm := file.NewFileManager()
-					broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] 📖 处理小说文件: %s", novelFile.Name()), broadcast.GetTimeStr())
-
-					// 读取输入目录中的小说
-					_, err = fm.CreateInputChapterStructure(absPath)
-					if err != nil {
-						broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 处理小说文件失败: %v", err), broadcast.GetTimeStr())
-
-						c.JSON(http.StatusOK, gin.H{"status": "error", "message": fmt.Sprintf("处理小说文件失败: %v", err)})
-						return
-					}
-
-					// 创建输出目录结构
-					fm.CreateOutputChapterStructure(inputDir)
-					broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[输出目录的名字] 📖 输出目录的名字: %v", inputDir), broadcast.GetTimeStr())
-
-					// 创建logger
-					logger, err := zap.NewProduction()
-					if err != nil {
-						broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 创建logger失败: %v", err), broadcast.GetTimeStr())
-
-						c.JSON(http.StatusOK, gin.H{"status": "error", "message": fmt.Sprintf("创建logger失败: %v", err)})
-						return
-					}
-					defer logger.Sync()
-
-					// 初始化各组件
-					wp := &WorkflowProcessor{
-						logger:        logger,
-						fileManager:   file.NewFileManager(),
-						ttsClient:     indextts2.NewIndexTTS2Client(logger, "http://localhost:7860"),
-						aegisubGen:    aegisub.NewAegisubGenerator(),
-						drawThingsGen: drawthings.NewChapterImageGeneratorWithStyle(logger, database.DB, GlobalStyle), // 使用带自定义风格的构造函数
-					}
-
-					// 广播开始生成音频
-					broadcast.GlobalBroadcastService.SendLog("voice", "[一键出片] 🔊 步骤2 - 开始生成音频...", broadcast.GetTimeStr())
-
-					// 遍历章节处理
-					for key, val := range file.ChapterMap {
-						outputDir := filepath.Join(projectRoot, "output", item.Name())
-
-						audioFile := filepath.Join(outputDir, fmt.Sprintf("chapter_%02d", key), fmt.Sprintf("chapter_%02d.wav", key))
-
-						// 保存音频生成参数到数据库
-						chapterParams := map[string]interface{}{
-							"chapter_number":         key,
-							"chapter_title":          fmt.Sprintf("第%d章", key),
-							"chapter_content_length": len(val),
-							"audio_generation": map[string]interface{}{
-								"input_text":      val[:min(len(val), 100)], // 只保存前100个字符作为示例
-								"reference_audio": "./assets/ref_audio/ref.m4a",
-								"output_file":     audioFile,
-								"timestamp":       time.Now().Format(time.RFC3339),
-							},
-						}
-
-						// 使用参考音频文件
-						refAudioPath := filepath.Join(projectRoot, "assets", "ref_audio", "ref.m4a")
-						if _, err := os.Stat(refAudioPath); os.IsNotExist(err) {
-							broadcast.GlobalBroadcastService.SendLog("voice", "[一键出片] ⚠️  未找到参考音频文件，跳过音频生成", broadcast.GetTimeStr())
-						} else {
-							err = wp.ttsClient.GenerateTTSWithAudio(refAudioPath, val, audioFile)
-							if err != nil {
-								broadcast.GlobalBroadcastService.SendLog("voice", fmt.Sprintf("[一键出片] ⚠️  音频生成失败: %v", err), broadcast.GetTimeStr())
-
-								wp.ttsClient.HTTPClient.CloseIdleConnections()
-								c.JSON(http.StatusOK, gin.H{"status": "error", "message": fmt.Sprintf("音频生成失败: %v", err)})
-								return
-							} else {
-								broadcast.GlobalBroadcastService.SendLog("voice", fmt.Sprintf("[一键出片] ✅ 音频生成完成: %s", audioFile), broadcast.GetTimeStr())
-
-								// 更新章节参数中的音频生成状态
-								if audioParams, ok := chapterParams["audio_generation"].(map[string]interface{}); ok {
-									audioParams["status"] = "completed"
-									audioParams["output_file"] = audioFile
-								}
-
-								// 显式关闭IndexTTS2客户端连接
-								if wp.ttsClient.HTTPClient != nil {
-									wp.ttsClient.HTTPClient.CloseIdleConnections()
-								}
-							}
-						}
-
-						// 步骤3: 生成台词/字幕
-						broadcast.GlobalBroadcastService.SendLog("aegisub", "[一键出片] 📜 步骤3 - 生成台词/字幕...", broadcast.GetTimeStr())
-
-						subtitleFile := filepath.Join(outputDir, fmt.Sprintf("chapter_%02d", key), fmt.Sprintf("chapter_%02d.srt", key))
-
-						if _, err := os.Stat(audioFile); err == nil {
-							// 如果音频文件存在，生成字幕
-							err = wp.aegisubGen.GenerateSubtitleFromIndextts2Audio(audioFile, val, subtitleFile)
-							if err != nil {
-								broadcast.GlobalBroadcastService.SendLog("aegisub", fmt.Sprintf("[一键出片] ⚠️  字幕生成失败: %v", err), broadcast.GetTimeStr())
-
-							} else {
-								broadcast.GlobalBroadcastService.SendLog("aegisub", fmt.Sprintf("[一键出片] ✅ 字幕生成完成: %s", subtitleFile), broadcast.GetTimeStr())
-
-							}
-						} else {
-								broadcast.GlobalBroadcastService.SendLog("aegisub", "[一键出片] ⚠️  由于音频文件不存在，跳过字幕生成", broadcast.GetTimeStr())
-
-						}
-						broadcast.GlobalBroadcastService.SendLog("image", "[一键出片] 🎨 步骤4 - 生成图像...", broadcast.GetTimeStr())
-
-						// 步骤4: 生成图像
-						imagesDir := filepath.Join(outputDir, fmt.Sprintf("chapter_%02d", key))
-						if err := os.MkdirAll(imagesDir, 0755); err != nil {
-							broadcast.GlobalBroadcastService.SendLog("image", fmt.Sprintf("[一键出片] ❌ 创建图像目录失败: %v", err), broadcast.GetTimeStr())
-							c.JSON(http.StatusOK, gin.H{"status": "error", "message": fmt.Sprintf("创建图像目录失败: %v", err)})
-							return
-						}
-
-						// 查找或创建项目
-						var project database.Project
-						result := database.DB.Where("name = ?", item.Name()).First(&project)
-						if result.Error != nil {
-							// 如果项目不存在，创建新项目
-							project = database.Project{
-								Name:        item.Name(),
-								Description: fmt.Sprintf("项目%s的一键出片工作流", item.Name()),
-							}
-							database.DB.Create(&project)
-						}
-
-						// 创建临时章节记录用于获取ID，以便关联场景
-						tempChapter := database.Chapter{
-							Title:          fmt.Sprintf("第%d章", key),
-							Content:        val[:min(len(val), 1000)], // 只保存部分内容作为示例
-							ProjectID:      project.ID,
-							WorkflowParams: "{}", // 临时值
-						}
-						database.DB.Create(&tempChapter)
-
-						// 估算音频时长用于分镜生成
-						estimatedAudioDuration := 0
-						if _, statErr := os.Stat(audioFile); statErr == nil {
-							// 基于音频文件大小估算时长
-							if fileInfo, err := os.Stat(audioFile); err == nil {
-								fileSizeMB := float64(fileInfo.Size()) / (1024 * 1024)
-								// 假设平均 1MB ≈ 10秒音频
-								estimatedAudioDuration = int(fileSizeMB * 10)
-								if estimatedAudioDuration < 30 { // 最少30秒
-									estimatedAudioDuration = 30
-								}
-							}
-						} else {
-							// 如果没有音频文件，基于文本长度估算
-							estimatedAudioDuration = len(val) * 2 / 10 // 每个字符约0.2秒
-							if estimatedAudioDuration < 60 {           // 最少1分钟
-								estimatedAudioDuration = 60
-							}
-						}
-
-						// 使用Ollama优化的提示词生成图像
-						broadcast.GlobalBroadcastService.SendLog("image", fmt.Sprintf("[一键出片] 开始生成图像，章节ID: %d", tempChapter.ID), broadcast.GetTimeStr())
-						err = wp.generateImagesWithOllamaPrompts(val, imagesDir, tempChapter.ID, estimatedAudioDuration)
-						if err != nil {
-							broadcast.GlobalBroadcastService.SendLog("image", fmt.Sprintf("[一键出片] ⚠️  图像生成失败: %v", err), broadcast.GetTimeStr())
-						} else {
-							broadcast.GlobalBroadcastService.SendLog("image", fmt.Sprintf("[一键出片] ✅ 图像生成完成，保存在: %s", imagesDir), broadcast.GetTimeStr())
-							
-							// 更新章节的图像路径
-							// 获取生成的图像文件列表
-							imageFiles, err := wp.getImageFilesFromDir(imagesDir)
-							if err == nil {
-								imageFilesJSON, _ := json.Marshal(imageFiles)
-								err = wp.updateChapterImages(tempChapter.ID, string(imageFilesJSON))
-								if err != nil {
-									wp.logger.Error("更新章节图像路径失败", zap.Uint("chapter_id", tempChapter.ID), zap.Error(err))
-								}
-							}
-						}
-
-						// 一键出片流程至此完成，所有资源（音频、字幕、图像）已保存到output目录
-						// 剪映项目生成留给用户手动操作
-
-						// 步骤5: 生成剪映项目 (CapCut)
-						broadcast.GlobalBroadcastService.SendLog("capcut", "[一键出片] 🎬 步骤5 - 生成剪映项目...", broadcast.GetTimeStr())
-
-						// 遵循用户的要求，将input文件夹改为当前项目目录的input
-						chapterDir := filepath.Join(projectRoot, "input", item.Name(), fmt.Sprintf("chapter_%02d", key))
-
-						// 检查章节目录是否存在
-						if _, err := os.Stat(chapterDir); err == nil {
-							// 使用CapCut生成器创建项目
-							capcutGenerator := capcut.NewCapcutGenerator(nil) // 传递logger或nil
-							err = capcutGenerator.GenerateProject(chapterDir)
-							if err != nil {
-								//broadcast.GlobalBroadcastService.SendLog("capcut", fmt.Sprintf("[一键出片] ⚠️  剪映项目生成失败: %v", err), broadcast.GetTimeStr())
-							} else {
-								broadcast.GlobalBroadcastService.SendLog("capcut", fmt.Sprintf("[一键出片] ✅ 剪映项目生成完成，章节: %d", key), broadcast.GetTimeStr())
-							}
-						} else {
-							broadcast.GlobalBroadcastService.SendLog("capcut", fmt.Sprintf("[一键出片] ⚠️  章节目录不存在: %s", chapterDir), broadcast.GetTimeStr())
-						}
-
-						// 保存章节工作流参数到数据库
-						// 重构章节参数，包含所有工作流详细信息
-						detailedChapterParams := map[string]interface{}{
-							"chapter_number":         key,
-							"chapter_title":          fmt.Sprintf("第%d章", key),
-							"chapter_content_length": len(val),
-							"audio_generation": map[string]interface{}{
-								"input_text":      val[:min(len(val), 100)], // 只保存前100个字符作为示例
-								"reference_audio": "./assets/ref_audio/ref.m4a",
-								"output_file":     audioFile,
-								"timestamp":       time.Now().Format(time.RFC3339),
-								"status":          "completed",
-							},
-							"subtitle_generation": map[string]interface{}{
-								"audio_file":    audioFile,
-								"subtitle_file": subtitleFile,
-								"input_text":    val[:min(len(val), 200)],
-								"status":        "completed", // 根据实际情况更新
-							},
-							"image_generation": map[string]interface{}{
-								"images_dir":           imagesDir,
-								"estimated_duration":   estimatedAudioDuration,
-								"status":               "completed",
-							},
-							"overall_status": "completed",
-							"execution_times": map[string]interface{}{
-								"start_time": time.Now().Format(time.RFC3339),
-								"end_time":   time.Now().Format(time.RFC3339),
-							},
-						}
-
-						workflowParamsBytes, err := json.Marshal(detailedChapterParams)
-						if err != nil {
-							broadcast.GlobalBroadcastService.SendLog("workflow", fmt.Sprintf("[一键出片] 序列化章节参数失败: %v", err), broadcast.GetTimeStr())
-						} else {
-							workflowParamsStr := string(workflowParamsBytes)
-
-							// 查找或创建项目
-							var project database.Project
-							result := database.DB.Where("name = ?", item.Name()).First(&project)
-							if result.Error != nil {
-								// 如果项目不存在，创建新项目
-								project = database.Project{
-									Name:        item.Name(),
-									Description: fmt.Sprintf("项目%s的一键出片工作流", item.Name()),
-								}
-								database.DB.Create(&project)
-							}
-
-							// 查找或创建章节并保存工作流参数
-							var chapter database.Chapter
-							result = database.DB.Where("project_id = ? AND title = ?", project.ID, fmt.Sprintf("第%d章", key)).First(&chapter)
-							if result.Error != nil {
-								// 如果章节不存在，创建新章节
-								chapter = database.Chapter{
-									Title:          fmt.Sprintf("第%d章", key),
-									Content:        val[:min(len(val), 1000)], // 只保存部分内容作为示例
-									ProjectID:      project.ID,
-									WorkflowParams: workflowParamsStr,
-								}
-								database.DB.Create(&chapter)
-							} else {
-								// 如果章节已存在，更新其工作流参数
-								chapter.WorkflowParams = workflowParamsStr
-								database.DB.Save(&chapter)
-							}
-
-							broadcast.GlobalBroadcastService.SendLog("workflow", fmt.Sprintf("[一键出片] 章节参数已保存到数据库，章节ID: %d", chapter.ID), broadcast.GetTimeStr())
-						}
-					}
-
-					broadcast.GlobalBroadcastService.SendLog("workflow", "[一键出片] ✅ 一键出片完整工作流执行完成！", broadcast.GetTimeStr())
-
-					return // 处理完一个小说就返回
+			// 遍历新创建的chapter_XX目录进行处理
+			for _, chapterFile := range newNovelFiles {
+				if chapterFile.IsDir() && isChapterDirectory(chapterFile.Name()) {
+					// 处理这个章节目录
+					chapterDirPath := filepath.Join(novelDir, chapterFile.Name())
+					processChapterDirectory(chapterDirPath, chapterFile.Name(), projectRoot, c, broadcast.GlobalBroadcastService)
 				}
 			}
 		}
 	}
 
-	// 如果没有找到匹配的项目，返回错误
-	broadcast.GlobalBroadcastService.SendLog("workflow", "[一键出片] ❌ 未找到匹配的项目文件结构", broadcast.GetTimeStr())
-	c.JSON(http.StatusOK, gin.H{"status": "error", "message": "未找到匹配的项目文件结构，请确保input目录下有正确命名的项目文件夹和小说文件"})
+	broadcast.GlobalBroadcastService.SendLog("workflow", "🎉🎉🎉🎊🎊🎊✅ 一键出片完整工作流执行完成！", broadcast.GetTimeStr())
+	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "一键出片工作流执行完成"})
+	return
+}
+
+// processChapterDirectory 处理已分割的章节目录
+func processChapterDirectory(chapterDir, chapterName string, projectRoot string, c *gin.Context, broadcastService *broadcast.BroadcastService) {
+	// 提取章节号
+	re := regexp.MustCompile(`chapter_(\d+)`)
+	matches := re.FindStringSubmatch(chapterName)
+	if len(matches) < 2 {
+		broadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 无法从目录名提取章节号: %s", chapterName), broadcast.GetTimeStr())
+		return
+	}
+
+	chapterNum, err := strconv.Atoi(matches[1])
+	if err != nil {
+		broadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 章节号格式错误: %s", chapterName), broadcast.GetTimeStr())
+		return
+	}
+
+	// 查找章节文本文件
+	chapterTxtFile := filepath.Join(chapterDir, fmt.Sprintf("%s.txt", chapterName))
+	if _, err := os.Stat(chapterTxtFile); os.IsNotExist(err) {
+		broadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 章节文本文件不存在: %s", chapterTxtFile), broadcast.GetTimeStr())
+		return
+	}
+
+	// 读取章节内容
+	content, err := os.ReadFile(chapterTxtFile)
+	if err != nil {
+		broadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 读取章节文件失败: %v", err), broadcast.GetTimeStr())
+		return
+	}
+
+	// 获取项目名（父目录名）
+	projectName := filepath.Base(filepath.Dir(chapterDir))
+
+	// 创建logger：设置为Debug级别以显示所有日志
+	config := zap.NewDevelopmentConfig()
+	config.Level = zap.NewAtomicLevelAt(zap.DebugLevel) // 设置为Debug级别以显示所有日志
+	logger, err := config.Build()
+	if err != nil {
+		broadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 创建logger失败: %v", err), broadcast.GetTimeStr())
+		c.JSON(http.StatusOK, gin.H{"status": "error", "message": fmt.Sprintf("创建logger失败: %v", err)})
+		return
+	}
+	defer logger.Sync()
+
+	// 初始化各组件
+	wp := &WorkflowProcessor{
+		logger:        logger,
+		fileManager:   file.NewFileManager(),
+		ttsClient:     indextts2.NewIndexTTS2Client(logger, "http://localhost:7860"),
+		aegisubGen:    aegisub.NewAegisubGenerator(),
+		drawThingsGen: drawthings.NewChapterImageGeneratorWithStyle(logger, database.DB, GlobalStyle), // 使用带自定义风格的构造函数
+	}
+
+	broadcastService.SendLog("movie", fmt.Sprintf("[一键出片] 🔊 处理章节:第%d章", chapterNum), broadcast.GetTimeStr())
+	outputDir := filepath.Join(projectRoot, "output", projectName)
+
+	audioFile := filepath.Join(outputDir, fmt.Sprintf("chapter_%02d", chapterNum), fmt.Sprintf("chapter_%02d.wav", chapterNum))
+
+	// 保存音频生成参数到数据库
+	chapterParams := map[string]interface{}{
+		"chapter_number":         chapterNum,
+		"chapter_title":          fmt.Sprintf("第%d章", chapterNum),
+		"chapter_content_length": len(content),
+		"audio_generation": map[string]interface{}{
+			"input_text":      string(content)[:min(len(string(content)), 1000)], // 只保存前1000个字符作为示例
+			"reference_audio": "./assets/ref_audio/ref.m4a",
+			"output_file":     audioFile,
+			"timestamp":       time.Now().Format(time.RFC3339),
+		},
+	}
+
+	// 使用参考音频文件
+	refAudioPath := filepath.Join(projectRoot, "assets", "ref_audio", "ref.m4a")
+	if _, err := os.Stat(refAudioPath); os.IsNotExist(err) {
+		broadcastService.SendLog("voice", "[一键出片] ⚠️  未找到参考音频文件，跳过音频生成", broadcast.GetTimeStr())
+	} else {
+		/* 3.=================== 发送文字到TTS生成音频文件 =======================================*/
+		err = wp.ttsClient.GenerateTTSWithAudio(refAudioPath, string(content), audioFile)
+		if err != nil {
+			broadcastService.SendLog("voice", fmt.Sprintf("[一键出片] ⚠️  音频生成失败: %v", err), broadcast.GetTimeStr())
+			c.JSON(http.StatusOK, gin.H{"status": "error", "message": fmt.Sprintf("音频生成失败: %v", err)})
+			return
+		}
+
+		// 音频生成成功
+		broadcastService.SendLog("voice", fmt.Sprintf("[一键出片] ✅ 音频生成完成: %s", audioFile), broadcast.GetTimeStr())
+
+		// 更新章节参数中的音频生成状态
+		if audioParams, ok := chapterParams["audio_generation"].(map[string]interface{}); ok {
+			audioParams["status"] = "completed"
+			audioParams["output_file"] = audioFile
+		}
+
+		// 无论成功还是失败都需要关闭连接
+		if wp.ttsClient.HTTPClient != nil {
+			wp.ttsClient.HTTPClient.CloseIdleConnections()
+		}
+	}
+
+	/* 4.=================== 生成台词/字幕保存srt文件 =======================================*/
+
+	// 步骤3: 生成台词/字幕
+	broadcastService.SendLog("aegisub", "[一键出片] 📜 步骤3 - 生成台词/字幕...", broadcast.GetTimeStr())
+
+	subtitleFile := filepath.Join(outputDir, fmt.Sprintf("chapter_%02d", chapterNum), fmt.Sprintf("chapter_%02d.srt", chapterNum))
+
+	if _, err := os.Stat(audioFile); err == nil {
+		// 如果音频文件存在，生成字幕
+		err = wp.aegisubGen.GenerateSubtitleFromIndextts2Audio(audioFile, string(content), subtitleFile)
+		if err != nil {
+			broadcastService.SendLog("aegisub", fmt.Sprintf("[一键出片] ⚠️  字幕生成失败: %v", err), broadcast.GetTimeStr())
+
+		} else {
+			broadcastService.SendLog("aegisub", fmt.Sprintf("[一键出片] ✅ 字幕生成完成: %s", subtitleFile), broadcast.GetTimeStr())
+
+		}
+	} else {
+		broadcastService.SendLog("aegisub", "[一键出片] ⚠️  由于音频文件不存在，跳过字幕生成", broadcast.GetTimeStr())
+
+	}
+	broadcastService.SendLog("drawthings", "[一键出片] 🎨 步骤4 - 生成图像...", broadcast.GetTimeStr())
+
+	// 步骤4: 生成图像
+	imagesDir := filepath.Join(outputDir, fmt.Sprintf("chapter_%02d", chapterNum))
+	if err := os.MkdirAll(imagesDir, 0755); err != nil {
+		broadcastService.SendLog("image", fmt.Sprintf("[一键出片] ❌ 创建图像目录失败: %v", err), broadcast.GetTimeStr())
+		c.JSON(http.StatusOK, gin.H{"status": "error", "message": fmt.Sprintf("创建图像目录失败: %v", err)})
+		return
+	}
+
+	// 查找或创建项目
+	var project database.Project
+	result := database.DB.Where("name = ?", projectName).First(&project)
+	if result.Error != nil {
+		// 如果项目不存在，创建新项目
+		project = database.Project{
+			Name:        projectName,
+			Description: fmt.Sprintf("项目%s的一键出片工作流", projectName),
+		}
+		database.DB.Create(&project)
+	}
+
+	// 更新或者创建章节
+	var tempChapter database.Chapter
+	result = database.DB.Where("project_id = ? AND number = ?", project.ID, chapterNum).First(&tempChapter)
+	if result.Error != nil {
+		tempChapter := database.Chapter{
+			Title:          fmt.Sprintf("第%d章", chapterNum),
+			Content:        string(content)[:min(len(string(content)), 1000)], // 只保存部分内容作为示例
+			ProjectID:      project.ID,
+			WorkflowParams: "{}", // 临时值
+		}
+		tempChapter.WorkflowParams = "{}"
+		database.DB.Save(&tempChapter)
+	} else {
+		newChapter := database.Chapter{
+			Title:          fmt.Sprintf("第%d章", chapterNum),
+			Content:        string(content)[:min(len(string(content)), 1000)], // 只保存部分内容作为示例
+			ProjectID:      project.ID,
+			WorkflowParams: "{}", // 临时值
+		}
+		database.DB.Create(&newChapter)
+	}
+
+	// 估算音频时长用于分镜生成
+	estimatedAudioDuration := 0
+	if _, statErr := os.Stat(audioFile); statErr == nil {
+		// 基于音频文件大小估算时长
+		if fileInfo, err := os.Stat(audioFile); err == nil {
+			fileSizeMB := float64(fileInfo.Size()) / (1024 * 1024)
+			// 假设平均 1MB ≈ 10秒音频
+			estimatedAudioDuration = int(fileSizeMB * 10)
+			if estimatedAudioDuration < 30 { // 最少30秒
+				estimatedAudioDuration = 30
+			}
+		}
+	} else {
+		// 如果没有音频文件，基于文本长度估算
+		estimatedAudioDuration = len(content) * 2 / 10 // 每个字符约0.2秒
+		if estimatedAudioDuration < 60 {               // 最少1分钟
+			estimatedAudioDuration = 60
+		}
+	}
+
+	// 使用Ollama优化的提示词生成图像
+	broadcastService.SendLog("image", fmt.Sprintf("[一键出片] 开始生成图像，章节ID: %d", tempChapter.ID), broadcast.GetTimeStr())
+	err = wp.generateImagesWithOllamaPrompts(string(content), imagesDir, tempChapter.ID, estimatedAudioDuration)
+	if err != nil {
+		broadcastService.SendLog("image", fmt.Sprintf("[一键出片] ⚠️  图像生成失败: %v", err), broadcast.GetTimeStr())
+	} else {
+		broadcastService.SendLog("image", fmt.Sprintf("[一键出片] ✅ 图像生成完成，保存在: %s", imagesDir), broadcast.GetTimeStr())
+
+		// 更新章节的图像路径
+		// 获取生成的图像文件列表
+		imageFiles, err := wp.getImageFilesFromDir(imagesDir)
+		if err == nil {
+			imageFilesJSON, _ := json.Marshal(imageFiles)
+			err = wp.updateChapterImages(tempChapter.ID, string(imageFilesJSON))
+			if err != nil {
+				wp.logger.Error("更新章节图像路径失败", zap.Uint("chapter_id", tempChapter.ID), zap.Error(err))
+			}
+		}
+	}
 }
 
 // capcutProjectHandler 生成剪映项目
@@ -2041,6 +2059,15 @@ func capcutProjectHandler(c *gin.Context) {
 	}()
 
 	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "CapCut project generation started"})
+}
+
+// isChapterDirectory 检查目录名是否为 chapter_XX 格式
+func isChapterDirectory(dirName string) bool {
+	matched, err := regexp.MatchString(`^chapter_\d+$`, dirName)
+	if err != nil {
+		return false
+	}
+	return matched
 }
 
 // 设置处理函数
@@ -2159,47 +2186,4 @@ func debugGlobalStyleHandler(c *gin.Context) {
 		"global_style":      GlobalStyle,
 		"additional_prompt": AdditionalPrompt,
 	})
-}
-
-// convertImageToBase64 将图片文件转换为base64编码
-func convertImageToBase64(imagePath string) string {
-	// 检查文件是否存在
-	if _, err := os.Stat(imagePath); os.IsNotExist(err) {
-		return ""
-	}
-
-	// 读取图片文件
-	imgData, err := os.ReadFile(imagePath)
-	if err != nil {
-		return ""
-	}
-
-	// 编码为base64
-	base64Str := base64.StdEncoding.EncodeToString(imgData)
-
-	// 返回data URL格式
-	return "data:image/png;base64," + base64Str
-}
-
-// sanitizeFilename 清理文件名，移除不安全字符
-func sanitizeFilename(filename string) string {
-	// 移除或替换不安全的字符
-	re := regexp.MustCompile(`[<>:"/\\|?*]`)
-	sanitized := re.ReplaceAllString(filename, "_")
-
-	// 限制长度
-	if len(sanitized) > 100 {
-		sanitized = sanitized[:100]
-	}
-
-	return sanitized
-}
-
-// getMapKeys 获取map的所有键
-func getMapKeys(m map[string]interface{}) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
 }

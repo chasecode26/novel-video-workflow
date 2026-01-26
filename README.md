@@ -288,7 +288,7 @@ output/
 ## 🧪 章节编号处理
 
 - 支持阿拉伯数字和中文数字识别（如"第七章"或"第7章"）
-- 输出使用两位数格式（如 `chapter_01`, `chapter_07`）
+- 输出使用两位数格式（如 `chapter_01`, `chapter_08`）
 - 最多支持99章处理
 - 自动检测重复内容并跳过处理
 
@@ -332,7 +332,7 @@ output/
 <div align="center">
   
 <video width="80%" controls poster="logo.png">
-  <source src="幽灵客栈_chapter_07.mov" type="video/quicktime">
+  <source src="幽灵客栈_chapter_08.mov" type="video/quicktime">
   您的浏览器不支持视频标签。
 </video>
 
@@ -340,18 +340,18 @@ output/
 </div>
 
 ### 音频与字幕示例
-- 🎵 [chapter_07.wav](output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_07/chapter_07.wav) - AI生成的配音
-- 📄 [chapter_07.srt](output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_07/chapter_07.srt) - 自动生成的字幕文件
+- 🎵 [chapter_08.wav](output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/chapter_08.wav) - AI生成的配音
+- 📄 [chapter_08.srt](output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/chapter_08.srt) - 自动生成的字幕文件
 
 
 ### AI生成图像示例 (宫格展示)
 
 <div align="center">
 
-<img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_07/scene_01.png" width="200" alt="场景 01" title="AI生成图像 - 场景 01"> <img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_07/scene_02.png" width="200" alt="场景 02" title="AI生成图像 - 场景 02">  
-<img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_07/scene_03.png" width="200" alt="场景 03" title="AI生成图像 - 场景 03"> <img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_07/scene_04.png" width="200" alt="场景 04" title="AI生成图像 - 场景 04">  
-<img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_07/scene_05.png" width="200" alt="场景 05" title="AI生成图像 - 场景 05"> <img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_07/scene_06.png" width="200" alt="场景 06" title="AI生成图像 - 场景 06">  
-<img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_07/scene_07.png" width="200" alt="场景 07" title="AI生成图像 - 场景 07"> <img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_07/scene_08.png" width="200" alt="场景 08" title="AI生成图像 - 场景 08">  
+<img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_01.png" width="200" alt="场景 01" title="AI生成图像 - 场景 01"> <img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_02.png" width="200" alt="场景 02" title="AI生成图像 - 场景 02">  
+<img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_03.png" width="200" alt="场景 03" title="AI生成图像 - 场景 03"> <img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_04.png" width="200" alt="场景 04" title="AI生成图像 - 场景 04">  
+<img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_05.png" width="200" alt="场景 05" title="AI生成图像 - 场景 05"> <img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_06.png" width="200" alt="场景 06" title="AI生成图像 - 场景 06">  
+<img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_07.png" width="200" alt="场景 07" title="AI生成图像 - 场景 07"> <img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_08.png" width="200" alt="场景 08" title="AI生成图像 - 场景 08">  
 
 </div>
 
