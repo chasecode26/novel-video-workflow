@@ -114,6 +114,7 @@ func fallbackToolList() {
 		"generate_image_from_image":                   "使用DrawThings API根据参考图像生成图像，采用悬疑风格",
 		"generate_images_from_chapter":                "使用DrawThings API根据章节文本生成图像，采用悬疑风格",
 		"generate_images_from_chapter_with_ai_prompt": "使用AI生成提示词和DrawThings API根据章节文本生成图像，采用悬疑风格",
+		"generate_image_from_lyric_ai_prompt":         "使用歌词按每句歌词文本生成图像，",
 	}
 
 	defaultTools := []string{
@@ -124,12 +125,13 @@ func fallbackToolList() {
 		"generate_image_from_image",
 		"generate_images_from_chapter",
 		"generate_images_from_chapter_with_ai_prompt",
+		"generate_image_from_lyric_ai_prompt",
 	}
 
 	for _, toolName := range defaultTools {
 		description, exists := descriptions[toolName]
 		if !exists {
-			description = fmt.Sprintf("MCP工具: %s", toolName)
+			description = fmt.Sprintf("%s", toolName)
 		}
 		mcpTools = append(mcpTools, ToolInfo{
 			Name:        toolName,
@@ -151,13 +153,14 @@ func getToolDescription(toolName string) string {
 		"generate_image_from_image":                   "使用DrawThings API根据参考图像生成图像，采用悬疑风格",
 		"generate_images_from_chapter":                "使用DrawThings API根据章节文本生成图像，采用悬疑风格",
 		"generate_images_from_chapter_with_ai_prompt": "使用AI生成提示词和DrawThings API根据章节文本生成图像，采用悬疑风格",
+		"generate_image_from_lyric_ai_prompt":         "使用歌词按每句歌词文本生成图像",
 	}
 
 	if desc, exists := descriptions[toolName]; exists {
 		return desc
 	}
 
-	return fmt.Sprintf("MCP工具: %s", toolName)
+	return fmt.Sprintf("%s", toolName)
 }
 
 // Gin路由处理函数
@@ -488,6 +491,90 @@ func apiExecuteHandler(c *gin.Context) {
 							"is_suspense":           true,
 							"tool":                  "drawthings_chapter_txt2img_with_ai_prompt",
 						}
+					case "generate_image_from_lyric_ai_prompt":
+						// 处理歌词MV图像生成
+						lyricText, ok := reqBody["lyric_text"].(string)
+						if !ok || lyricText == "" {
+							lyricText = "这是一首美丽的歌曲\n旋律悠扬动听\n歌词深情动人" // 默认歌词
+						}
+
+						outputDir, ok := reqBody["output_dir"].(string)
+						if !ok || outputDir == "" {
+							outputDir = fmt.Sprintf("./output/lyric_mv_%d", time.Now().Unix())
+						}
+
+						widthFloat, ok := reqBody["width"].(float64)
+						var width int
+						if ok {
+							width = int(widthFloat)
+						} else {
+							width = 512 // 默认宽度
+						}
+
+						heightFloat, ok := reqBody["height"].(float64)
+						var height int
+						if ok {
+							height = int(heightFloat)
+						} else {
+							height = 896 // 默认高度
+						}
+
+						// 确保输出目录存在
+						if err := os.MkdirAll(outputDir, 0755); err != nil {
+							broadcast.GlobalBroadcastService.SendLog("lyric", fmt.Sprintf("[%s] 创建输出目录失败: %v", toolName, err), broadcast.GetTimeStr())
+							return
+						}
+
+						broadcast.GlobalBroadcastService.SendLog("lyric", fmt.Sprintf("[%s] 开始生成歌词MV图像", toolName), broadcast.GetTimeStr())
+						broadcast.GlobalBroadcastService.SendLog("lyric", fmt.Sprintf("[%s] 歌词长度: %d 字符", toolName, len(lyricText)), broadcast.GetTimeStr())
+						broadcast.GlobalBroadcastService.SendLog("lyric", fmt.Sprintf("[%s] 输出目录: %s", toolName, outputDir), broadcast.GetTimeStr())
+
+						// 创建一个自定义的日志记录器，将内部日志广播到前端
+						logger, _ := zap.NewProduction()
+						defer logger.Sync()
+
+						// 使用自定义的广播日志适配器
+						encoder := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
+						writeSyncer := zapcore.AddSync(os.Stdout) // 输出到标准输出，同时也会被广播
+						broadcastLogger := NewBroadcastLoggerAdapter(toolName, encoder, writeSyncer)
+						broadcaster := zap.New(broadcastLogger)
+
+						// 使用带广播功能的日志记录器创建章节图像生成器，使用歌词MV风格
+						generator := drawthings.NewChapterImageGeneratorWithStyle(broadcaster, database.DB, "音乐视频艺术风格")
+
+						// 直接调用歌词图像生成方法
+						results, err := generator.GenerateImagesFromLyric(lyricText, outputDir, width, height)
+						if err != nil {
+							broadcast.GlobalBroadcastService.SendLog("lyric", fmt.Sprintf("[%s] 歌词图像生成失败: %v", toolName, err), broadcast.GetTimeStr())
+							return
+						}
+
+						// 准备结果
+						imageFiles := make([]string, len(results))
+						lyrics := make([]string, len(results))
+						prompts := make([]string, len(results))
+
+						for i, result := range results {
+							imageFiles[i] = result.ImageFile
+							lyrics[i] = result.ParagraphText
+							prompts[i] = result.ImagePrompt
+						}
+
+						result = map[string]interface{}{
+							"success":               true,
+							"output_dir":            outputDir,
+							"lyric_text_length":     len(lyricText),
+							"generated_image_count": len(results),
+							"image_files":           imageFiles,
+							"lyrics":                lyrics,
+							"prompts":               prompts,
+							"width":                 width,
+							"height":                height,
+							"tool":                  "drawthings_lyric_mv_generator",
+						}
+
+						broadcast.GlobalBroadcastService.SendLog("lyric", fmt.Sprintf("[%s] 歌词MV图像生成完成，共生成 %d 张图像", toolName, len(results)), broadcast.GetTimeStr())
+
 					default:
 						return
 					}

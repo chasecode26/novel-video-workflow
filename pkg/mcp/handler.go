@@ -12,8 +12,8 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	aegisub "novel-video-workflow/pkg/tools/aegisub"
 	database "novel-video-workflow/pkg/database"
+	aegisub "novel-video-workflow/pkg/tools/aegisub"
 	drawthings "novel-video-workflow/pkg/tools/drawthings"
 	"novel-video-workflow/pkg/tools/file"
 	"novel-video-workflow/pkg/tools/indextts2"
@@ -25,28 +25,29 @@ import (
 
 // Handler processes MCP requests
 type Handler struct {
-	server    *mcp_server.MCPServer
-	processor *workflow.Processor
-	logger    *zap.Logger
-	toolNames []string
-	db        *gorm.DB
+	server      *mcp_server.MCPServer
+	processor   *workflow.Processor
+	logger      *zap.Logger
+	toolNames   []string
+	db          *gorm.DB
 	globalStyle string
 }
 
 // NewHandler creates a new handler
 func NewHandler(server *mcp_server.MCPServer, processor *workflow.Processor, logger *zap.Logger, globalStyle string) *Handler {
 	h := &Handler{
-		server:    server,
-		processor: processor,
-		logger:    logger,
-		toolNames: make([]string, 0),
-		db:        database.DB, // 使用全局数据库连接
+		server:      server,
+		processor:   processor,
+		logger:      logger,
+		toolNames:   make([]string, 0),
+		db:          database.DB, // 使用全局数据库连接
 		globalStyle: globalStyle,
 	}
 
 	return h
 }
 
+// RegisterTools registers all tools with the MCP server
 // RegisterTools registers all tools with the MCP server
 func (h *Handler) RegisterTools() {
 
@@ -134,6 +135,20 @@ func (h *Handler) RegisterTools() {
 
 	h.server.AddTool(generateImagesFromChapterWithAIPromptTool, h.handleGenerateImagesFromChapterWithAIPrompt)
 	h.toolNames = append(h.toolNames, "generate_images_from_chapter_with_ai_prompt")
+
+	// Register generate_image_from_lyric_ai_prompt tool - DrawThings歌词MV生图工具
+	generateImageFromLyricWithAIPromptTool := mcp.NewTool("generate_image_from_lyric_ai_prompt",
+		mcp.WithDescription("Generate MV images from song lyrics using AI-generated prompts with DrawThings API and music video style template"),
+		mcp.WithString("lyric_text", mcp.Required(), mcp.Description("The song lyrics to generate MV images from")),
+		mcp.WithString("output_dir", mcp.Required(), mcp.Description("Output directory for generated MV images")),
+		mcp.WithNumber("width", mcp.Description("Image width"), mcp.DefaultNumber(float64(512))),
+		mcp.WithNumber("height", mcp.Description("Image height"), mcp.DefaultNumber(float64(896))),
+		mcp.WithBoolean("is_suspense", mcp.Description("Apply suspense style"), mcp.DefaultBool(false)), // 歌词MV默认不使用悬疑风格
+		mcp.WithString("template_id", mcp.Description("Template ID to use for image generation")),
+	)
+
+	h.server.AddTool(generateImageFromLyricWithAIPromptTool, h.handleGenerateImagesFromLyricWithAIPrompt)
+	h.toolNames = append(h.toolNames, "generate_image_from_lyric_ai_prompt")
 
 	h.logger.Info("MCP tools registered",
 		zap.Int("tool_count", len(h.toolNames)))
@@ -1167,7 +1182,7 @@ func (h *Handler) handleGenerateImagesFromChapterWithAIPrompt(ctx context.Contex
 	// 默认使用全局样式，但如果提供了模板ID，则使用该模板
 	styleToUse := h.globalStyle
 	selectedTemplateName := "" // 用于跟踪选中的模板名称
-	
+
 	// 如果提供了模板ID，尝试从数据库获取模板并更新生成器的选中模板和样式
 	if templateIDStr != "" {
 		if h.db != nil {
@@ -1175,15 +1190,15 @@ func (h *Handler) handleGenerateImagesFromChapterWithAIPrompt(ctx context.Contex
 			if err == nil {
 				template, err := database.GetPromptTemplateByID(h.db, uint(templateID))
 				if err == nil && template != nil {
-					styleToUse = template.StyleAddon // 使用模板的风格附加内容
+					styleToUse = template.StyleAddon     // 使用模板的风格附加内容
 					selectedTemplateName = template.Name // 记录模板名称
 				}
 			}
 		}
 	}
-	
+
 	generator := drawthings.NewChapterImageGeneratorWithStyle(h.logger, h.db, styleToUse)
-	
+
 	// 如果有明确的模板名称，直接设置到生成器
 	if selectedTemplateName != "" {
 		generator.SelectedTemplate = selectedTemplateName
@@ -1240,7 +1255,7 @@ func (h *Handler) handleGenerateImagesFromChapterWithAIPrompt(ctx context.Contex
 	}
 
 	return mcp.NewToolResultText(string(responseJSON)), nil
-}
+} // handleGenerateImagesFromChapterWithAIPrompt generates images from chapter text using AI-generated prompts with DrawThings API
 
 // HandleGenerateImagesFromChapterWithAIPromptDirect 直接调用版本
 func (h *Handler) HandleGenerateImagesFromChapterWithAIPromptDirect(request *MockRequest) (map[string]interface{}, error) {
@@ -1272,7 +1287,7 @@ func (h *Handler) HandleGenerateImagesFromChapterWithAIPromptDirect(request *Moc
 	// 默认使用全局样式，但如果提供了模板ID，则使用该模板
 	styleToUse := h.globalStyle
 	selectedTemplateName := "" // 用于跟踪选中的模板名称
-	
+
 	// 如果提供了模板ID，尝试从数据库获取模板并更新生成器的选中模板和样式
 	if templateIDStr != "" {
 		if h.db != nil {
@@ -1280,15 +1295,15 @@ func (h *Handler) HandleGenerateImagesFromChapterWithAIPromptDirect(request *Moc
 			if err == nil {
 				template, err := database.GetPromptTemplateByID(h.db, uint(templateID))
 				if err == nil && template != nil {
-					styleToUse = template.StyleAddon // 使用模板的风格附加内容
+					styleToUse = template.StyleAddon     // 使用模板的风格附加内容
 					selectedTemplateName = template.Name // 记录模板名称
 				}
 			}
 		}
 	}
-	
+
 	generator := drawthings.NewChapterImageGeneratorWithStyle(h.logger, h.db, styleToUse)
-	
+
 	// 如果有明确的模板名称，直接设置到生成器
 	if selectedTemplateName != "" {
 		generator.SelectedTemplate = selectedTemplateName
@@ -1378,4 +1393,126 @@ func (r *MockRequest) GetBool(key string, defaultValue bool) bool {
 		}
 	}
 	return defaultValue
+}
+
+// handleGenerateImagesFromLyricWithAIPrompt generates images from lyric text using AI-generated prompts with DrawThings API
+func (h *Handler) handleGenerateImagesFromLyricWithAIPrompt(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// 修正参数名 - 使用lyric_text而不是chapter_text
+	lyricText, err := request.RequireString("lyric_text")
+	if err != nil {
+		h.logger.Error("Missing lyric_text parameter", zap.Error(err))
+		return mcp.NewToolResultError("Missing required parameter: lyric_text"), nil
+	}
+
+	outputDir, err := request.RequireString("output_dir")
+	if err != nil {
+		h.logger.Error("Missing output_dir parameter", zap.Error(err))
+		return mcp.NewToolResultError("Missing required parameter: output_dir"), nil
+	}
+
+	// 获取可选参数
+	width := int(request.GetInt("width", 512))
+	height := int(request.GetInt("height", 896))
+	//isSuspense := request.GetBool("is_suspense", false) // 歌词MV默认不使用悬疑风格
+	templateIDStr := request.GetString("template_id", "")
+
+	// 确保输出目录存在
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		h.logger.Error("Failed to create output directory", zap.Error(err))
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to create output directory: %v", err)), nil
+	}
+
+	// 优先使用歌词MV生成模板
+	styleToUse := "音乐视频艺术风格"
+	selectedTemplateName := "歌词MV生成" // 默认使用歌词MV模板
+
+	// 如果提供了模板ID，尝试从数据库获取指定模板
+	if templateIDStr != "" {
+		if h.db != nil {
+			templateID, err := strconv.ParseUint(templateIDStr, 10, 32)
+			if err == nil {
+				template, err := database.GetPromptTemplateByID(h.db, uint(templateID))
+				if err == nil && template != nil {
+					styleToUse = template.StyleAddon
+					selectedTemplateName = template.Name
+				}
+			}
+		}
+	} else {
+		// 尝试获取歌词MV生成模板
+		if h.db != nil {
+			template, err := database.GetPromptTemplateByName(h.db, "歌词MV生成")
+			if err == nil && template != nil {
+				styleToUse = template.StyleAddon
+				selectedTemplateName = template.Name
+			}
+		}
+	}
+
+	// 创建专门的歌词图像生成器
+	generator := drawthings.NewChapterImageGeneratorWithStyle(h.logger, h.db, styleToUse)
+	generator.SelectedTemplate = selectedTemplateName
+
+	h.logger.Info("开始生成歌词MV图像",
+		zap.String("lyric_length", fmt.Sprintf("%d chars", len(lyricText))),
+		zap.String("template", selectedTemplateName),
+		zap.String("output_dir", outputDir))
+
+	// 使用歌词专用的图像生成方法
+	results, err := generator.GenerateImagesFromLyric(lyricText, outputDir, width, height)
+	if err != nil {
+		h.logger.Error("Failed to generate images from lyrics with AI prompts", zap.Error(err))
+		response := map[string]interface{}{
+			"success":           false,
+			"error":             fmt.Sprintf("Failed to generate lyric images: %v", err),
+			"lyric_text_length": len(lyricText),
+			"output_dir":        outputDir,
+			"template_used":     selectedTemplateName,
+		}
+
+		responseJSON, err := json.MarshalIndent(response, "", "  ")
+		if err != nil {
+			h.logger.Error("Failed to serialize error response", zap.Error(err))
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to serialize response: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(string(responseJSON)), nil
+	}
+
+	// 成功响应
+	imageFiles := make([]string, len(results))
+	lyrics := make([]string, len(results))
+	prompts := make([]string, len(results))
+
+	for i, result := range results {
+		imageFiles[i] = result.ImageFile
+		lyrics[i] = result.ParagraphText // 这里应该是歌词行
+		prompts[i] = result.ImagePrompt
+	}
+
+	response := map[string]interface{}{
+		"success":               true,
+		"output_dir":            outputDir,
+		"lyric_text_length":     len(lyricText),
+		"generated_image_count": len(results),
+		"image_files":           imageFiles,
+		"lyrics":                lyrics, // 改为lyrics更准确
+		"prompts":               prompts,
+		"width":                 width,
+		"height":                height,
+		"template_used":         selectedTemplateName,
+		"tool":                  "drawthings_lyric_mv_generator", // 更准确的工具名称
+	}
+
+	responseJSON, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		h.logger.Error("Failed to serialize response", zap.Error(err))
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to serialize response: %v", err)), nil
+	}
+
+	h.logger.Info("歌词MV图像生成完成",
+		zap.Int("generated_count", len(results)),
+		zap.String("output_dir", outputDir))
+
+	return mcp.NewToolResultText(string(responseJSON)), nil
 }

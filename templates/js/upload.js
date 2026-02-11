@@ -93,49 +93,6 @@ function uploadMultipleFiles(files, baseDir) {
     uploadNext(0);
 }
 
-// 添加拖拽上传功能
-function initDragAndDrop() {
-    const dropArea = document.getElementById('folderUploadArea');
-    
-    if (dropArea) {
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropArea.addEventListener(eventName, preventDefaults, false);
-        });
-        
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-        
-        ['dragenter', 'dragover'].forEach(eventName => {
-            dropArea.addEventListener(eventName, highlight, false);
-        });
-        
-        ['dragleave', 'drop'].forEach(eventName => {
-            dropArea.addEventListener(eventName, unhighlight, false);
-        });
-        
-        function highlight() {
-            dropArea.style.borderColor = '#3b82f6';
-            dropArea.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
-        }
-        
-        function unhighlight() {
-            dropArea.style.borderColor = '#9ca3af';
-            dropArea.style.backgroundColor = 'transparent';
-        }
-        
-        dropArea.addEventListener('drop', handleDrop, false);
-        
-        function handleDrop(e) {
-            const dt = e.dataTransfer;
-            const files = dt.files;
-            
-            // 处理拖放的文件夹
-            handleFolderUpload(files);
-        }
-    }
-}
 
 // 上传功能相关
 function processFolder() {

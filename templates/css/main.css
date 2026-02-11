@@ -213,3 +213,88 @@ header {
     z-index: -100;
     overflow: hidden;
 }
+
+/* 歌词工具专用样式 */
+.lyric-tool-form {
+    border-left: 4px solid #a855f7; /* 紫色边框突出显示 */
+    background: rgba(168, 85, 247, 0.1); /* 紫色背景透明度 */
+}
+
+.lyric-tool-form textarea {
+    border-color: #a855f7;
+}
+
+.lyric-tool-form textarea:focus {
+    border-color: #c084fc;
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.2);
+}
+
+.lyric-tool-form input[type="number"] {
+    border-color: #a855f7;
+}
+
+.lyric-tool-form input[type="number"]:focus {
+    border-color: #c084fc;
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.2);
+}
+
+/* 通知消息样式 */
+.notification-success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    border: none;
+}
+
+.notification-error {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+    border: none;
+}
+
+.notification-warning {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: white;
+    border: none;
+}
+
+.notification-info {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+    border: none;
+}
+
+/* 歌词文本区域特殊样式 */
+#lyricText_generate_image_from_lyric_ai_prompt {
+    font-family: 'Courier New', monospace;
+    line-height: 1.6;
+    letter-spacing: 0.5px;
+}
+
+/* 歌词工具卡片特殊样式 */
+.tool-card-lyric {
+    border-top: 3px solid #a855f7;
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(30, 30, 36, 0.25) 100%);
+}
+
+/* 歌词工具按钮悬停效果 */
+.bg-purple-500:hover {
+    background: linear-gradient(135deg, #c084fc 0%, #a855f7 100%);
+}
+
+/* 歌词输入提示文本 */
+.lyric-placeholder::before {
+    content: "🎵 输入歌词，每行一句...";
+    color: #9ca3af;
+    font-style: italic;
+}
+
+/* 歌词工具响应式设计 */
+@media (max-width: 768px) {
+    .lyric-tool-form .grid {
+        grid-template-columns: 1fr;
+    }
+
+    .lyric-tool-form textarea {
+        min-height: 120px;
+    }
+}

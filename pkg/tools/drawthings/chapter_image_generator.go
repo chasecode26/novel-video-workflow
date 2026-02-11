@@ -16,18 +16,18 @@ import (
 const (
 	// 悬疑风格描述 - 用于图像生成的风格限定
 	DefaultSuspenseStyle = "悬疑惊悚风格，周围环境模糊成黑影, 空气凝滞,浅景深, 胶片颗粒感, 低饱和度，极致悬疑氛围, 阴沉窒息感, 夏季，环境阴霾，其他部分模糊不可见"
-	
+
 	// 普通悬疑风格描述
 	BasicSuspenseStyle = "悬疑风格，氛围紧张，暗淡光线，神秘感"
 )
 
 // ChapterImageGenerator 章节图像生成器
 type ChapterImageGenerator struct {
-	Client       *DrawThingsClient
-	OllamaClient *OllamaClient
-	Logger       *zap.Logger
+	Client           *DrawThingsClient
+	OllamaClient     *OllamaClient
+	Logger           *zap.Logger
 	SelectedTemplate string // 选中的提示词模板名称
-	CurrentStyle string   // 当前使用的风格描述
+	CurrentStyle     string // 当前使用的风格描述
 }
 
 // NewChapterImageGenerator 创建章节图像生成器
@@ -40,9 +40,9 @@ func NewChapterImageGeneratorWithDB(logger *zap.Logger, db *gorm.DB) *ChapterIma
 	client := NewDrawThingsClient(logger, "http://localhost:7861")
 	ollamaClient := NewOllamaClient(logger, "http://localhost:11434", "qwen3:4b", db) // 使用默认Ollama配置
 	return &ChapterImageGenerator{
-		Client:       client,
-		OllamaClient: ollamaClient,
-		Logger:       logger,
+		Client:           client,
+		OllamaClient:     ollamaClient,
+		Logger:           logger,
 		SelectedTemplate: "悬疑惊悚", // 默认使用悬疑惊悚模板
 	}
 }
@@ -387,4 +387,216 @@ func (c *ChapterImageGenerator) ProcessChapterTextFile(textFilePath, outputDir s
 	}
 
 	return nil
+}
+
+// GenerateImagesFromLyric 根据歌词文本生成图像（专门针对MV制作）
+func (c *ChapterImageGenerator) GenerateImagesFromLyric(lyricText, outputDir string, width, height int) ([]ParagraphImage, error) {
+	// 将相对路径转换为绝对路径
+	absOutputDir, err := filepath.Abs(outputDir)
+	if err != nil {
+		c.Logger.Warn("无法解析输出目录路径", zap.String("output_dir", outputDir), zap.Error(err))
+		absOutputDir = outputDir
+	}
+
+	// 按歌词行分割文本
+	lyricLines := c.splitLyricIntoLines(lyricText)
+
+	var results []ParagraphImage
+
+	c.Logger.Info("开始生成歌词MV图像",
+		zap.String("output_dir", absOutputDir),
+		zap.Int("lyric_line_count", len(lyricLines)))
+
+	// 检查DrawThings API可用性
+	if !c.Client.APIAvailable {
+		c.Logger.Warn("DrawThings API不可用，将跳过图像生成步骤", zap.String("api_url", c.Client.BaseURL))
+		return results, fmt.Errorf("DrawThings API不可用，请确保Stable Diffusion WebUI正在运行在 %s", c.Client.BaseURL)
+	}
+
+	for i, lyricLine := range lyricLines {
+		trimmedLine := strings.TrimSpace(lyricLine)
+		if trimmedLine == "" {
+			continue
+		}
+
+		// 生成图像文件名（使用歌词行号）
+		imageFile := filepath.Join(absOutputDir, fmt.Sprintf("lyric_%03d.png", i+1))
+
+		// 确保输出目录存在
+		if err := os.MkdirAll(absOutputDir, 0755); err != nil {
+			c.Logger.Error("创建输出目录失败", zap.String("dir", absOutputDir), zap.Error(err))
+			continue
+		}
+
+		// 为歌词生成专门的提示词（考虑上下文）
+		imagePrompt, err := c.generateLyricPromptWithContext(trimmedLine, lyricLines, i)
+		if err != nil {
+			c.Logger.Warn("生成歌词提示词失败，使用基础提示词",
+				zap.Int("line_index", i),
+				zap.String("lyric", trimmedLine),
+				zap.Error(err))
+			imagePrompt = c.createBasicLyricPrompt(trimmedLine)
+		}
+
+		// 使用生成的提示词调用DrawThings API生成图像
+		err = c.Client.GenerateImageFromTextWithDefaultTemplate(imagePrompt, imageFile, width, height, false)
+		if err != nil {
+			c.Logger.Warn("生成歌词图像失败",
+				zap.Int("line_index", i),
+				zap.String("lyric", trimmedLine),
+				zap.String("prompt", imagePrompt),
+				zap.Error(err))
+			continue
+		}
+
+		// 添加到结果
+		results = append(results, ParagraphImage{
+			ParagraphText: trimmedLine,
+			ImageFile:     imageFile,
+			ImagePrompt:   imagePrompt,
+			Index:         i,
+		})
+
+		c.Logger.Info("歌词图像生成成功",
+			zap.Int("index", i),
+			zap.String("image_file", imageFile),
+			zap.String("lyric_preview", c.truncateString(trimmedLine, 50)),
+			zap.String("prompt_preview", c.truncateString(imagePrompt, 80)))
+
+		// 添加小延迟避免API过载
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	c.Logger.Info("歌词MV图像生成完成",
+		zap.Int("generated_count", len(results)),
+		zap.Int("total_lines", len(lyricLines)))
+
+	return results, nil
+}
+
+// createBasicLyricPrompt 创建基础歌词提示词
+func (c *ChapterImageGenerator) createBasicLyricPrompt(lyricLine string) string {
+	// 基础的歌词提示词模板
+	basePrompt := lyricLine
+
+	// 添加音乐视频相关元素
+	musicElements := []string{
+		"音乐视频风格",
+		"动态视觉效果",
+		"色彩渐变",
+		"光影流动",
+		"节奏感构图",
+	}
+
+	// 根据歌词内容添加情感元素
+	if strings.Contains(lyricLine, "爱") || strings.Contains(lyricLine, "love") {
+		musicElements = append(musicElements, "浪漫氛围", "温暖色调")
+	} else if strings.Contains(lyricLine, "悲伤") || strings.Contains(lyricLine, "泪") {
+		musicElements = append(musicElements, "忧郁氛围", "冷色调")
+	} else if strings.Contains(lyricLine, "快乐") || strings.Contains(lyricLine, "欢") {
+		musicElements = append(musicElements, "欢快氛围", "明亮色彩")
+	}
+
+	// 组合提示词
+	for _, element := range musicElements {
+		basePrompt += ", " + element
+	}
+
+	return basePrompt
+}
+
+// generateLyricPromptWithContext 生成带上下文的歌词提示词
+func (c *ChapterImageGenerator) generateLyricPromptWithContext(currentLine string, allLines []string, currentIndex int) (string, error) {
+	// 获取前后文
+	var contextLines []string
+
+	// 添加前文（最多2行）
+	startCtx := max(0, currentIndex-2)
+	for i := startCtx; i < currentIndex; i++ {
+		if i >= 0 && i < len(allLines) {
+			contextLines = append(contextLines, allLines[i])
+		}
+	}
+
+	// 添加当前行
+	contextLines = append(contextLines, currentLine)
+
+	// 添加后文（最多2行）
+	endCtx := min(len(allLines), currentIndex+3)
+	for i := currentIndex + 1; i < endCtx; i++ {
+		if i < len(allLines) {
+			contextLines = append(contextLines, allLines[i])
+		}
+	}
+
+	// 构建上下文字符串
+	contextStr := strings.Join(contextLines, " | ")
+
+	// 使用Ollama生成带上下文的提示词
+	prompt, err := c.OllamaClient.GenerateImagePromptWithTemplate(contextStr, c.CurrentStyle, c.SelectedTemplate)
+	if err != nil {
+		return "", err
+	}
+
+	// 确保提示词包含音乐视频相关的元素
+	if !strings.Contains(prompt, "音乐") && !strings.Contains(prompt, "MV") {
+		prompt += ", 音乐视频风格, 动态视觉效果"
+	}
+
+	return prompt, nil
+}
+
+// splitLyricIntoLines 将歌词文本分割为行
+func (c *ChapterImageGenerator) splitLyricIntoLines(text string) []string {
+	// 按换行符分割歌词
+	lines := strings.Split(text, "\n")
+
+	var lyricLines []string
+
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+
+		// 过滤掉空行和只有标点符号的行
+		if trimmedLine != "" && len(strings.TrimSpace(trimmedLine)) > 1 {
+			lyricLines = append(lyricLines, trimmedLine)
+		}
+	}
+
+	// 如果按换行符分割后行数太少，尝试按句号分割
+	if len(lyricLines) < 3 {
+		// 按句号、分号、感叹号、问号分割
+		separators := []string{".", "。", "!", "！", "?", "？", ";", "；"}
+		for _, sep := range separators {
+			if strings.Contains(text, sep) {
+				parts := strings.Split(text, sep)
+				var newLines []string
+				for _, part := range parts {
+					trimmedPart := strings.TrimSpace(part)
+					if trimmedPart != "" && len(trimmedPart) > 5 {
+						newLines = append(newLines, trimmedPart)
+					}
+				}
+				if len(newLines) > len(lyricLines) {
+					lyricLines = newLines
+				}
+			}
+		}
+	}
+
+	return lyricLines
+}
+
+// 辅助函数
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

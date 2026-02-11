@@ -13,7 +13,8 @@ Aegisub客户端下载   <br/>
 # 小说视频工作流 (Novel Video Workflow)
 
 一个基于AI技术的小说转视频自动化生成系统，集成了多种AI工具（TTS、图像生成等），能够将小说文本转换为带有音频、字幕和图像的视频内容，并生成可用于剪映的一键出片项目结构。
-
+> 2026.02.11 新增图像MV生成，通过歌词自动生成mv图片，  
+> 详情  MCP工具-->generate_image_from_lyric_ai_prompt--> 输入歌词，点击生成即可   
 > 🎉在线体验：https://yadou.net
 ## 🧧 节日将至，新增“马年祝福语”提示词，一键生成“马”主题的一组提示词模板，让您节日里尽情表达美好祝愿  
 ## 🍷 祝君春节快乐,恭喜发财 🧨🎆🎇🎉🎊  
@@ -351,18 +352,18 @@ output/
 </div>
 
 ### 音频与字幕示例
-- 🎵 [chapter_08.wav](output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/chapter_08.wav) - AI生成的配音
-- 📄 [chapter_08.srt](output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/chapter_08.srt) - 自动生成的字幕文件
+- 🎵 [chapter_08.wav](output/青花瓷/chapter_08/chapter_08.wav) - AI生成的配音
+- 📄 [chapter_08.srt](output/青花瓷/chapter_08/chapter_08.srt) - 自动生成的字幕文件
 
 
 ### AI生成图像示例 (宫格展示)
 
 <div align="center">
 
-<img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_01.png" width="200" alt="场景 01" title="AI生成图像 - 场景 01"> <img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_02.png" width="200" alt="场景 02" title="AI生成图像 - 场景 02">  
-<img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_03.png" width="200" alt="场景 03" title="AI生成图像 - 场景 03"> <img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_04.png" width="200" alt="场景 04" title="AI生成图像 - 场景 04">  
-<img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_05.png" width="200" alt="场景 05" title="AI生成图像 - 场景 05"> <img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_06.png" width="200" alt="场景 06" title="AI生成图像 - 场景 06">  
-<img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_07.png" width="200" alt="场景 07" title="AI生成图像 - 场景 07"> <img src="output/%E5%B9%BD%E7%81%B5%E5%AE%A2%E6%A0%88/chapter_08/scene_08.png" width="200" alt="场景 08" title="AI生成图像 - 场景 08">  
+<img src="output/青花瓷/chapter_08/scene_01.png" width="200" alt="场景 01" title="AI生成图像 - 场景 01"> <img src="output/青花瓷/chapter_08/scene_02.png" width="200" alt="场景 02" title="AI生成图像 - 场景 02">  
+<img src="output/青花瓷/chapter_08/scene_03.png" width="200" alt="场景 03" title="AI生成图像 - 场景 03"> <img src="output/青花瓷/chapter_08/scene_04.png" width="200" alt="场景 04" title="AI生成图像 - 场景 04">  
+<img src="output/青花瓷/chapter_08/scene_05.png" width="200" alt="场景 05" title="AI生成图像 - 场景 05"> <img src="output/青花瓷/chapter_08/scene_06.png" width="200" alt="场景 06" title="AI生成图像 - 场景 06">  
+<img src="output/青花瓷/chapter_08/scene_07.png" width="200" alt="场景 07" title="AI生成图像 - 场景 07"> <img src="output/青花瓷/chapter_08/scene_08.png" width="200" alt="场景 08" title="AI生成图像 - 场景 08">  
 
 </div>
 

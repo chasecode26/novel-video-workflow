@@ -18,108 +18,152 @@ function loadToolsList() {
                 'generate_image_from_image': 'fas fa-image',
                 'generate_images_from_chapter': 'fas fa-images',
                 'generate_images_from_chapter_with_ai_prompt': 'fas fa-robot',
+                'generate_image_from_lyric_ai_prompt': 'fas fa-camera-movie',
                 'default': 'fas fa-cog'
             };
-            
+
             tools.forEach(function(tool) {
                 const toolCard = document.createElement('div');
                 toolCard.className = 'glass-effect rounded-2xl p-6 border border-white border-opacity-20 card-hover future-glow';
-                
+
                 // 获取对应工具的图标
                 const iconClass = toolIcons[tool.name] || toolIcons['default'];
-                
+
                 // 为generate_indextts2_audio工具添加特殊处理
                 let cardContent = '';
                 if (tool.name === 'generate_indextts2_audio') {
                     // 为音频生成工具添加表单
                     cardContent = '<div class="tool-header text-center">' +
                         '<div class="flex flex-col items-center">' +
-                            '<div class="w-20 h-20 bg-blue-500 bg-opacity-20 rounded-full flex items-center justify-center mb-4">' +
-                                '<i class="' + iconClass + ' text-blue-300 text-2xl"></i>' +
-                            '</div>' +
-                            '<h3 class="text-xl font-bold text-white mb-3">' + tool.name + '</h3>' +
-                            '<p class="text-lg text-gray-300 mb-6">' + tool.description + '</p>' +
-                            '<button onclick="toggleAudioForm(\'' + tool.name + '\')" class="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-3 px-4 rounded-xl transition-all duration-200 future-glow text-lg">' +
-                                '执行工具' +
-                            '</button>' +
+                        '<div class="w-20 h-20 bg-blue-500 bg-opacity-20 rounded-full flex items-center justify-center mb-4">' +
+                        '<i class="' + iconClass + ' text-blue-300 text-2xl"></i>' +
                         '</div>' +
-                    '</div>' +
-                    '<div id="form_' + tool.name + '" class="audio-tool-form mt-6 p-6 glass-effect rounded-xl border border-white border-opacity-20 hidden">' +
+                        '<h3 class="text-xl font-bold text-white mb-3">' + tool.name + '</h3>' +
+                        '<p class="text-lg text-gray-300 mb-6">' + tool.description + '</p>' +
+                        '<button onclick="toggleAudioForm(\'' + tool.name + '\')" class="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-3 px-4 rounded-xl transition-all duration-200 future-glow text-lg">' +
+                        '执行工具' +
+                        '</button>' +
+                        '</div>' +
+                        '</div>' +
+                        '<div id="form_' + tool.name + '" class="audio-tool-form mt-6 p-6 glass-effect rounded-xl border border-white border-opacity-20 hidden">' +
                         '<div class="form-group mb-6">' +
-                            '<label class="block text-lg font-bold text-gray-300 mb-3">输入文本:</label>' +
-                            '<textarea id="textInput_' + tool.name + '" placeholder="请输入要转换为语音的文本" rows="3" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"></textarea>' +
+                        '<label class="block text-lg font-bold text-gray-300 mb-3">输入文本:</label>' +
+                        '<textarea id="textInput_' + tool.name + '" placeholder="请输入要转换为语音的文本" rows="3" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"></textarea>' +
                         '</div>' +
                         '<div class="form-group mb-6">' +
-                            '<label class="block text-lg font-bold text-gray-300 mb-3">输出目录:</label>' +
-                            '<input type="text" id="outputDir_' + tool.name + '" value="./output/" placeholder="请输入输出目录" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg">' +
+                        '<label class="block text-lg font-bold text-gray-300 mb-3">输出目录:</label>' +
+                        '<input type="text" id="outputDir_' + tool.name + '" value="./output/" placeholder="请输入输出目录" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg">' +
                         '</div>' +
                         '<div class="flex flex-wrap gap-4">' +
-                            '<button onclick="executeAudioTool(\'' + tool.name + '\')" class="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-6 py-3 rounded-lg transition-all duration-200 future-glow text-lg">' +
-                                '生成音频' +
-                            '</button>' +
-                            '<button onclick="hideAudioForm(\'' + tool.name + '\')" class="bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white px-6 py-3 rounded-lg transition-all duration-200 future-glow text-lg">' +
-                                '取消' +
-                            '</button>' +
+                        '<button onclick="executeAudioTool(\'' + tool.name + '\')" class="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-6 py-3 rounded-lg transition-all duration-200 future-glow text-lg">' +
+                        '生成音频' +
+                        '</button>' +
+                        '<button onclick="hideAudioForm(\'' + tool.name + '\')" class="bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white px-6 py-3 rounded-lg transition-all duration-200 future-glow text-lg">' +
+                        '取消' +
+                        '</button>' +
                         '</div>' +
-                    '</div>';
+                        '</div>';
                 } else if (tool.name === 'generate_images_from_chapter_with_ai_prompt') {
                     // 为图像生成工具添加表单
                     cardContent = '<div class="tool-header text-center">' +
                         '<div class="flex flex-col items-center">' +
-                            '<div class="w-20 h-20 bg-blue-500 bg-opacity-20 rounded-full flex items-center justify-center mb-4">' +
-                                '<i class="' + iconClass + ' text-blue-300 text-2xl"></i>' +
-                            '</div>' +
-                            '<h3 class="text-xl font-bold text-white mb-2 break-words max-w-full">' + tool.name + '</h3>' +
-                            '<p class="text-lg text-gray-300 mb-6">' + tool.description + '</p>' +
-                            '<button onclick="toggleImageForm(\'' + tool.name + '\')" class="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-3 px-4 rounded-xl transition-all duration-200 future-glow text-lg">' +
-                                '执行工具' +
-                            '</button>' +
+                        '<div class="w-20 h-20 bg-blue-500 bg-opacity-20 rounded-full flex items-center justify-center mb-4">' +
+                        '<i class="' + iconClass + ' text-blue-300 text-2xl"></i>' +
                         '</div>' +
-                    '</div>' +
-                    '<div id="form_' + tool.name + '" class="audio-tool-form mt-6 p-6 glass-effect rounded-xl border border-white border-opacity-20 hidden">' +
+                        '<h3 class="text-xl font-bold text-white mb-2 break-words max-w-full">' + tool.name + '</h3>' +
+                        '<p class="text-lg text-gray-300 mb-6">' + tool.description + '</p>' +
+                        '<button onclick="toggleImageForm(\'' + tool.name + '\')" class="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-3 px-4 rounded-xl transition-all duration-200 future-glow text-lg">' +
+                        '执行工具' +
+                        '</button>' +
+                        '</div>' +
+                        '</div>' +
+                        '<div id="form_' + tool.name + '" class="audio-tool-form mt-6 p-6 glass-effect rounded-xl border border-white border-opacity-20 hidden">' +
                         '<div class="form-group mb-6">' +
-                            '<label class="block text-lg font-bold text-gray-300 mb-3">章节文本:</label>' +
-                            '<textarea id="chapterText_' + tool.name + '" placeholder="请输入要生成图像的章节文本" rows="4" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"></textarea>' +
+                        '<label class="block text-lg font-bold text-gray-300 mb-3">章节文本:</label>' +
+                        '<textarea id="chapterText_' + tool.name + '" placeholder="请输入要生成图像的章节文本" rows="4" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"></textarea>' +
                         '</div>' +
                         '<div class="form-group mb-6">' +
-                            '<label class="block text-lg font-bold text-gray-300 mb-3">输出目录:</label>' +
-                            '<input type="text" id="outputDir_' + tool.name + '" value="./output/images_" placeholder="请输入输出目录" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg">' +
+                        '<label class="block text-lg font-bold text-gray-300 mb-3">输出目录:</label>' +
+                        '<input type="text" id="outputDir_' + tool.name + '" value="./output/images_" placeholder="请输入输出目录" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg">' +
                         '</div>' +
                         '<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">' +
-                            '<div class="form-group">' +
-                                '<label class="block text-lg font-bold text-gray-300 mb-3">图像宽度:</label>' +
-                                '<input type="number" id="imageWidth_' + tool.name + '" value="512" min="256" max="2048" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg">' +
-                            '</div>' +
-                            '<div class="form-group">' +
-                                '<label class="block text-lg font-bold text-gray-300 mb-3">图像高度:</label>' +
-                                '<input type="number" id="imageHeight_' + tool.name + '" value="896" min="256" max="2048" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg">' +
-                            '</div>' +
+                        '<div class="form-group">' +
+                        '<label class="block text-lg font-bold text-gray-300 mb-3">图像宽度:</label>' +
+                        '<input type="number" id="imageWidth_' + tool.name + '" value="512" min="256" max="2048" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg">' +
+                        '</div>' +
+                        '<div class="form-group">' +
+                        '<label class="block text-lg font-bold text-gray-300 mb-3">图像高度:</label>' +
+                        '<input type="number" id="imageHeight_' + tool.name + '" value="896" min="256" max="2048" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg">' +
+                        '</div>' +
                         '</div>' +
                         '<div class="flex flex-wrap gap-4">' +
-                            '<button onclick="executeImageTool(\'' + tool.name + '\')" class="bg-gradient-to-r from-gray-200 to-gray-300 hover:from-gray-300 hover:to-gray-400 text-gray-800 px-6 py-3 rounded-lg transition-all duration-200 future-glow text-lg">' +
-                                '生成图像' +
-                            '</button>' +
-                            '<button onclick="hideImageForm(\'' + tool.name + '\')" class="bg-gradient-to-r from-gray-200 to-gray-300 hover:from-gray-300 hover:to-gray-400 text-gray-800 px-6 py-3 rounded-lg transition-all duration-200 future-glow text-lg">' +
-                                '取消' +
-                            '</button>' +
+                        '<button onclick="executeImageTool(\'' + tool.name + '\')" class="bg-gradient-to-r from-gray-200 to-gray-300 hover:from-gray-300 hover:to-gray-400 text-gray-800 px-6 py-3 rounded-lg transition-all duration-200 future-glow text-lg">' +
+                        '生成图像' +
+                        '</button>' +
+                        '<button onclick="hideImageForm(\'' + tool.name + '\')" class="bg-gradient-to-r from-gray-200 to-gray-300 hover:from-gray-300 hover:to-gray-400 text-gray-800 px-6 py-3 rounded-lg transition-all duration-200 future-glow text-lg">' +
+                        '取消' +
+                        '</button>' +
                         '</div>' +
-                    '</div>';
+                        '</div>';
+                } else if (tool.name === 'generate_image_from_lyric_ai_prompt') {
+                    console.log('generate_image_from_lyric_ai_prompt')
+                    // 为歌词MV生成工具添加表单
+                    cardContent = '<div class="tool-header text-center">' +
+                        '<div class="flex flex-col items-center">' +
+                        '<div class="w-20 h-20 bg-purple-500 bg-opacity-20 rounded-full flex items-center justify-center mb-4">' +
+                        '<i class="fas fa-music text-purple-300 text-2xl"></i>' +
+                        '</div>' +
+                        '<h3 class="text-xl font-bold text-white mb-2 break-words max-w-full">' + tool.name + '</h3>' +
+                        '<p class="text-lg text-gray-300 mb-6">' + tool.description + '</p>' +
+                        '<button onclick="toggleLyricForm(\'' + tool.name + '\')" class="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white py-3 px-4 rounded-xl transition-all duration-200 future-glow text-lg">' +
+                        '执行工具' +
+                        '</button>' +
+                        '</div>' +
+                        '</div>' +
+                        '<div id="form_' + tool.name + '" class="lyric-tool-form mt-6 p-6 glass-effect rounded-xl border border-white border-opacity-20 hidden">' +
+                        '<div class="form-group mb-6">' +
+                        '<label class="block text-lg font-bold text-gray-300 mb-3">歌词文本:</label>' +
+                        '<textarea id="lyricText_' + tool.name + '" placeholder="请输入歌词文本，每行一句歌词" rows="6" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-lg"></textarea>' +
+                        '</div>' +
+                        '<div class="form-group mb-6">' +
+                        '<label class="block text-lg font-bold text-gray-300 mb-3">输出目录:</label>' +
+                        '<input type="text" id="outputDir_' + tool.name + '" value="./output/lyric_mv_" placeholder="请输入输出目录" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-lg">' +
+                        '</div>' +
+                        '<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">' +
+                        '<div class="form-group">' +
+                        '<label class="block text-lg font-bold text-gray-300 mb-3">图像宽度:</label>' +
+                        '<input type="number" id="imageWidth_' + tool.name + '" value="512" min="256" max="2048" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-lg">' +
+                        '</div>' +
+                        '<div class="form-group">' +
+                        '<label class="block text-lg font-bold text-gray-300 mb-3">图像高度:</label>' +
+                        '<input type="number" id="imageHeight_' + tool.name + '" value="896" min="256" max="2048" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-lg">' +
+                        '</div>' +
+                        '</div>' +
+                        '<div class="flex flex-wrap gap-4">' +
+                        '<button onclick="executeLyricTool(\'' + tool.name + '\')" class="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white px-6 py-3 rounded-lg transition-all duration-200 future-glow text-lg">' +
+                        '<i class="fas fa-play mr-2"></i>生成MV图像' +
+                        '</button>' +
+                        '<button onclick="hideLyricForm(\'' + tool.name + '\')" class="bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white px-6 py-3 rounded-lg transition-all duration-200 future-glow text-lg">' +
+                        '取消' +
+                        '</button>' +
+                        '</div>' +
+                        '</div>';
                 } else {
                     // 其他工具使用普通按钮
                     cardContent = '<div class="tool-header text-center">' +
                         '<div class="flex flex-col items-center">' +
-                            '<div class="w-20 h-20 bg-blue-500 bg-opacity-20 rounded-full flex items-center justify-center mb-5">' +
-                                '<i class="' + iconClass + ' text-blue-300 text-3xl"></i>' +
-                            '</div>' +
-                            '<h3 class="text-xl font-bold text-white mb-3">' + tool.name + '</h3>' +
-                            '<p class="text-lg text-gray-300 mb-6">' + tool.description + '</p>' +
-                            '<button onclick="executeTool(\'' + tool.name + '\')" class="w-full bg-gradient-to-r from-gray-200 to-gray-300 hover:from-gray-300 hover:to-gray-400 text-gray-800 py-3 px-4 rounded-xl transition-all duration-200 future-glow text-lg">' +
-                                '执行工具' +
-                            '</button>' +
+                        '<div class="w-20 h-20 bg-blue-500 bg-opacity-20 rounded-full flex items-center justify-center mb-5">' +
+                        '<i class="' + iconClass + ' text-blue-300 text-3xl"></i>' +
                         '</div>' +
-                    '</div>';
+                        '<h3 class="text-xl font-bold text-white mb-3">' + tool.name + '</h3>' +
+                        '<p class="text-lg text-gray-300 mb-6">' + tool.description + '</p>' +
+                        '<button onclick="executeTool(\'' + tool.name + '\')" class="w-full bg-gradient-to-r from-gray-200 to-gray-300 hover:from-gray-300 hover:to-gray-400 text-gray-800 py-3 px-4 rounded-xl transition-all duration-200 future-glow text-lg">' +
+                        '执行工具' +
+                        '</button>' +
+                        '</div>' +
+                        '</div>';
                 }
-                
+
                 toolCard.innerHTML = cardContent;
                 toolsListDiv.appendChild(toolCard);
             });
@@ -134,105 +178,35 @@ function loadToolsList() {
         });
 }
 
-// 显示音频生成表单
-function toggleAudioForm(toolName) {
-    const form = document.getElementById('form_' + toolName);
-    if (form) {
-        form.classList.toggle('hidden');
-    }
-}
-
-// 隐藏音频生成表单
-function hideAudioForm(toolName) {
-    const form = document.getElementById('form_' + toolName);
-    if (form) {
-        form.classList.add('hidden');
-    }
-}
-
-// 显示图像生成表单
-function toggleImageForm(toolName) {
-    const form = document.getElementById('form_' + toolName);
-    if (form) {
-        form.classList.toggle('hidden');
-    }
-}
-
-// 隐藏图像生成表单
-function hideImageForm(toolName) {
-    const form = document.getElementById('form_' + toolName);
-    if (form) {
-        form.classList.add('hidden');
-    }
-}
-
-// 执行音频生成工具
-function executeAudioTool(toolName) {
-    const textInput = document.getElementById('textInput_' + toolName).value;
-    const outputDir = document.getElementById('outputDir_' + toolName).value;
-    
-    if (!textInput || textInput.trim() === '') {
-        alert('请输入要转换为语音的文本');
-        return;
-    }
-    
-    // 生成输出文件路径
-    const timestamp = new Date().getTime();
-    const outputFile = outputDir + '/audio_' + timestamp + '.wav';
-    
-    const params = {
-        toolName: toolName,
-        text: textInput,
-        output_file: outputFile
-    };
-    
-    fetch('/api/execute', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(params)
-    })
-    .then(response => response.json())
-    .then(data => {
-        console.log('Audio tool execution initiated:', data);
-        // 隐藏表单
-        hideAudioForm(toolName);
-    })
-    .catch(error => {
-        console.error('Error executing audio tool:', error);
-    });
-}
-
-// 执行图像生成工具
-function executeImageTool(toolName) {
-    const chapterText = document.getElementById('chapterText_' + toolName).value;
+// 执行歌词生成工具
+function executeLyricTool(toolName) {
+    const lyricText = document.getElementById('lyricText_' + toolName).value;
     const outputDir = document.getElementById('outputDir_' + toolName).value;
     const imageWidth = parseInt(document.getElementById('imageWidth_' + toolName).value);
     const imageHeight = parseInt(document.getElementById('imageHeight_' + toolName).value);
-    
-    if (!chapterText || chapterText.trim() === '') {
-        alert('请输入要生成图像的章节文本');
+
+    if (!lyricText || lyricText.trim() === '') {
+        alert('请输入歌词文本');
         return;
     }
-    
+
     if (!outputDir || outputDir.trim() === '') {
         alert('请输入输出目录');
         return;
     }
-    
+
     // 生成输出目录路径
     const timestamp = new Date().getTime();
     const outputDirectory = outputDir + timestamp;
-    
+
     const params = {
         toolName: toolName,
-        chapter_text: chapterText,
+        lyric_text: lyricText,
         output_dir: outputDirectory,
         width: imageWidth,
         height: imageHeight
     };
-    
+
     fetch('/api/execute', {
         method: 'POST',
         headers: {
@@ -240,16 +214,74 @@ function executeImageTool(toolName) {
         },
         body: JSON.stringify(params)
     })
-    .then(response => response.json())
-    .then(data => {
-        console.log('Image tool execution initiated:', data);
-        // 隐藏表单
-        hideImageForm(toolName);
-    })
-    .catch(error => {
-        console.error('Error executing image tool:', error);
-    });
+        .then(response => response.json())
+        .then(data => {
+            console.log('Lyric tool execution initiated:', data);
+            // 隐藏表单
+            hideLyricForm(toolName);
+            showNotification('歌词MV图像生成已启动，请在控制台查看进度', 'success');
+        })
+        .catch(error => {
+            console.error('Error executing lyric tool:', error);
+            showNotification('执行歌词工具时出错: ' + error.message, 'error');
+        });
 }
+
+// 显示通知消息
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = 'fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg transform transition-all duration-300';
+
+    switch(type) {
+        case 'success':
+            notification.className += ' bg-green-500 text-white';
+            break;
+        case 'error':
+            notification.className += ' bg-red-500 text-white';
+            break;
+        case 'warning':
+            notification.className += ' bg-yellow-500 text-white';
+            break;
+        default:
+            notification.className += ' bg-blue-500 text-white';
+    }
+
+    notification.innerHTML = `
+        <div class="flex items-center">
+            <i class="fas ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'} mr-2"></i>
+            <span>${message}</span>
+            <button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-white hover:text-gray-200">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        if (notification.parentElement) {
+            notification.remove();
+        }
+    }, 3000);
+}
+
+// 显示歌词生成表单
+function toggleLyricForm(toolName) {
+    const form = document.getElementById('form_' + toolName);
+    if (form) {
+        form.classList.toggle('hidden');
+    }
+}
+
+// 隐藏歌词生成表单
+function hideLyricForm(toolName) {
+    const form = document.getElementById('form_' + toolName);
+    if (form) {
+        form.classList.add('hidden');
+    }
+}
+
+
 
 function executeTool(toolName) {
     fetch('/api/execute', {
