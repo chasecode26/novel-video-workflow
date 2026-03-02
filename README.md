@@ -16,16 +16,14 @@ Aegisub客户端下载   <br/>
 > 2026.02.11 新增图像MV生成，通过歌词自动生成mv图片，  
 > 详情  MCP工具-->generate_image_from_lyric_ai_prompt--> 输入歌词，点击生成即可   
 > 🎉在线体验：https://yadou.net
-## 🧧 节日将至，新增“马年祝福语”提示词，一键生成“马”主题的一组提示词模板，让您节日里尽情表达美好祝愿  
-## 🍷 祝君春节快乐,恭喜发财 🧨🎆🎇🎉🎊  
-- ✨ **设置中选择马年祝福提示词** - 设置选项卡-风格设置-选择马年，保存后，系统将以该模板作为基础模板，生成一组提示词，用于后续的AI处理。
-- ✨ **MCP选项卡输入简单文本** - MCP选项卡-generate_images_from_chapter_with_ai_prompt工具模块，输入简要文本，如：春风送暖，马跃龙腾;
-- 🔥 **提示词优化及生图** - 系统ollama生成场景提示词，发给drawthings生成图片，并保存在output中，可自行下载，发亲戚，发朋友，发朋友圈  
 
+
+## 联系方式
+> - 邮箱：<EMAIL>yuanhaozhuzhu@hotmail.com
+> - qq群： 1053223644
 <div align="center">
-<img src="paragraph_001.png" width="400" alt="剪映草稿目录生成 - 截图1" title="剪映草稿目录生成 - 截图1"> 
+<img src="assets/qrcode_1772414579837.jpg" width="200" alt="芽豆小说剧" title="芽豆小说剧"> 
 </div>
-
 ## 🌟 功能特性
 
 - ✨ **智能章节分割** - 自动将小说文本按章节拆分
