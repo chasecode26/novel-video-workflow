@@ -382,12 +382,12 @@ func (c *DrawThingsClient) getTemplateByName(name string) (*database.PromptTempl
 
 // GenerateImageFromTextWithDefaultTemplate 根据文本生成图像（使用默认行为）
 func (c *DrawThingsClient) GenerateImageFromTextWithDefaultTemplate(text, outputFile string, width, height int, isSuspense bool) error {
-	return c.GenerateImageFromText(text, outputFile, width, height, isSuspense, "悬疑惊悚")
+	return c.GenerateImageFromText(text, outputFile, width, height, isSuspense, "浪漫温馨")
 }
 
 // GenerateImageFromImageWithDefaultTemplate 根据参考图像生成新图像（使用默认行为）
 func (c *DrawThingsClient) GenerateImageFromImageWithDefaultTemplate(initImagePath, text, outputFile string, width, height int, isSuspense bool) error {
-	return c.GenerateImageFromImage(initImagePath, text, outputFile, width, height, isSuspense, "悬疑惊悚")
+	return c.GenerateImageFromImage(initImagePath, text, outputFile, width, height, isSuspense, "浪漫温馨")
 }
 
 // GenerateImageFromImage 根据参考图像生成新图像

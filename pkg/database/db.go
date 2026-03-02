@@ -48,7 +48,9 @@ func InitDB(dbPath string) error {
 		// 记录错误但不中断初始化，因为提示词模板迁移失败不应该阻止整个系统运行
 		fmt.Printf("警告: 提示词模板数据迁移失败: %v\n", err)
 	}
-
+	if err = runConfigurationMigration(newDB); err != nil {
+		fmt.Printf("警告: 系统配置数据迁移失败: %v\n", err)
+	}
 	DB = newDB
 	return nil
 }
@@ -56,7 +58,7 @@ func InitDB(dbPath string) error {
 // migrateDB 执行数据库迁移
 func migrateDB(db *gorm.DB) error {
 	// 自动迁移表结构，包括新的提示词模板表
-	err := db.AutoMigrate(&Project{}, &Chapter{}, &Scene{}, &PromptTemplate{})
+	err := db.AutoMigrate(&Project{}, &Chapter{}, &Scene{}, &PromptTemplate{}, &Configuration{})
 	if err != nil {
 		return fmt.Errorf("自动迁移表结构失败: %v", err)
 	}
@@ -364,6 +366,27 @@ func GetAllProjects() ([]Project, error) {
 		return nil, result.Error
 	}
 	return projects, nil
+}
+
+// runConfigurationMigration
+func runConfigurationMigration(db *gorm.DB) error {
+	var count int64
+	db.Model(&Configuration{}).Count(&count)
+	if count > 0 {
+		// 如果已有数据，跳过初始化
+		return nil
+	}
+	// 设置默认配置
+	tx := db.Model(&Configuration{}).Create(&Configuration{
+		PromptTemplateID: 8,
+		StartTime:        time.Now(),
+		ImageWidth:       512,
+		ImageHeight:      512,
+	})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	return nil
 }
 
 // runPromptTemplateMigration 执行提示词模板数据迁移
@@ -705,6 +728,7 @@ func runPromptTemplateMigration(db *gorm.DB) error {
 请只返回中文图像提示词，不要添加任何解释或其他内容。`,
 			StyleAddon:     ", 音乐视频艺术风格, 动态视觉效果, 色彩渐变, 光影流动, 节奏感强烈的构图, 现代数字艺术技法, 视觉冲击力强, 情感表达丰富",
 			NegativePrompt: "静态照片, 模糊不清, 色彩单调, 构图呆板, 缺乏艺术感, 过度写实, 没有视觉创意, 平淡无奇",
+			BackgroundText: "mv背景：一个写给写给父亲的故事，传递了对父辈精神的传承与敬意，同时饱含对未来的期许",
 		},
 	}
 
@@ -722,4 +746,27 @@ func runPromptTemplateMigration(db *gorm.DB) error {
 	}
 
 	return nil
+}
+
+func GetConfig(db *gorm.DB) (Configuration, error) {
+	var config Configuration
+	tx := DB.Model(&Configuration{}).First(&config)
+	return config, tx.Error
+}
+func GetConfigAddStr(db *gorm.DB) (string, error) {
+	var config Configuration
+	tx := DB.Model(&Configuration{}).First(&config)
+	tmp := PromptTemplate{}
+	DB.Model(&PromptTemplate{}).Where("id=?", config.PromptTemplateID).Find(&tmp)
+	return tmp.BackgroundText, tx.Error
+}
+
+func SetConfig(PromptTemplateID uint, ImageWidth int, ImageHeight int) error {
+	var config Configuration
+	tx := DB.Model(&Configuration{}).First(&config)
+	config.PromptTemplateID = PromptTemplateID
+	config.ImageWidth = ImageWidth
+	config.ImageHeight = ImageHeight
+	tx = DB.Model(&Configuration{}).Save(&config)
+	return tx.Error
 }

@@ -392,9 +392,48 @@
         
         <!-- Footer with copyright -->
         <footer class="mt-12 text-center relative z-20">
-            <p class="text-sm text-white">© 2026 小说视频工作流系统. 版权所有.</p>
-            <p class="text-xs text-gray-500 mt-1"></p>
+            <div class="glass-effect rounded-2xl p-6 mx-4">
+                <!-- 联系方式和链接 -->
+                <div class="flex flex-wrap justify-center items-center gap-6 mb-4">
+                    <!-- GitHub 链接 -->
+                    <a href="https://github.com/hulutech-web/novel-video-workflow"
+                       target="_blank"
+                       class="flex items-center text-blue-300 hover:text-blue-100 transition-colors duration-200">
+                        <i class="fab fa-github mr-2 text-lg"></i>
+                        <span class="text-sm">GitHub 项目</span>
+                    </a>
+
+                    <!-- 邮箱联系方式 -->
+                    <a href="mailto:yuanhaozhuzhu@hotmail.com"
+                       class="flex items-center text-orange-300 hover:text-orange-100 transition-colors duration-200">
+                        <i class="fas fa-envelope mr-2 text-sm"></i>
+                        <span class="text-sm">yuanhaozhuzhu@hotmail.com</span>
+                    </a>
+                </div>
+
+                <!-- QQ群信息（包含二维码） -->
+                <div class="mt-4 pt-4 border-t border-gray-600 border-opacity-30">
+                    <p class="text-xs text-gray-400 mb-2 text-center">
+                        <i class="fab fa-qq mr-1 text-blue-400"></i>
+                        <span>QQ交流群: 1053223644</span>
+                    </p>
+                    <div class="flex justify-center mb-2">
+                        <img src="/assets/qrcode_1772414579837.jpg"
+                             alt="QQ群二维码"
+                             class="w-32 h-auto rounded-lg shadow-lg"
+                             title="扫描二维码加入QQ群">
+                    </div>
+                    <p class="text-xs text-gray-500 text-center">
+                        扫一扫二维码，加入群聊
+                    </p>
+                </div>
+
+                <!-- 版权信息（放在最下方） -->
+                <p class="text-sm text-white mt-4">© 2026 小说视频工作流系统. 版权所有.</p>
+            </div>
         </footer>
+
+
     </div>
 
     <!-- 引用外部JavaScript文件 -->

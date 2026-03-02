@@ -5,21 +5,22 @@ import "gorm.io/gorm"
 // PromptTemplate 代表一个提示词模板
 type PromptTemplate struct {
 	gorm.Model
-	Name        string `json:"name" gorm:"not null;Unique"`                    // 模板名称
-	Description string `json:"description" gorm:"type:text"`                   // 模板描述
-	Type        string `json:"type" gorm:"not null"`                          // 模板类型 (style, scene, character等)
-	Category    string `json:"category" gorm:"not null"`                      // 模板分类 (suspense, romance, action等)
-	IsActive    bool   `json:"is_active" gorm:"default:true"`                 // 是否激活
-	IsBuiltIn   bool   `json:"is_built_in" gorm:"default:false"`              // 是否为内置模板
-	Order       int    `json:"order" gorm:"column:sort_order;default:0"`      // 排序权重
+	Name        string `json:"name" gorm:"not null;Unique"`              // 模板名称
+	Description string `json:"description" gorm:"type:text"`             // 模板描述
+	Type        string `json:"type" gorm:"not null"`                     // 模板类型 (style, scene, character等)
+	Category    string `json:"category" gorm:"not null"`                 // 模板分类 (suspense, romance, action等)
+	IsActive    bool   `json:"is_active" gorm:"default:true"`            // 是否激活
+	IsBuiltIn   bool   `json:"is_built_in" gorm:"default:false"`         // 是否为内置模板
+	Order       int    `json:"order" gorm:"column:sort_order;default:0"` // 排序权重
 
 	// 系统提示词部分
-	SystemPrompt string `json:"system_prompt" gorm:"type:text"`                // 系统提示词
-	UserTemplate string `json:"user_template" gorm:"type:text"`                // 用户提示词模板
+	SystemPrompt string `json:"system_prompt" gorm:"type:text"` // 系统提示词
+	UserTemplate string `json:"user_template" gorm:"type:text"` // 用户提示词模板
 
 	// 风格相关的附加内容
-	StyleAddon     string `json:"style_addon" gorm:"type:text"`               // 风格附加描述
-	NegativePrompt string `json:"negative_prompt" gorm:"type:text"`           // 负面提示词
+	StyleAddon     string `json:"style_addon" gorm:"type:text"`     // 风格附加描述
+	NegativePrompt string `json:"negative_prompt" gorm:"type:text"` // 负面提示词
+	BackgroundText string `json:"background_text" gorm:"type:text"` // 故事背景
 }
 
 // CreatePromptTemplatesTable 创建提示词模板表
