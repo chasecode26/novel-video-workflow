@@ -52,3 +52,13 @@ type Scene struct {
 	StartTime       time.Time `json:"start_time"`                        // 开始处理时间
 	EndTime         time.Time `json:"end_time"`                          // 结束处理时间
 }
+
+// Configuration系统配置
+type Configuration struct {
+	gorm.Model
+	PromptTemplateID uint      `json:"prompt_template_id"` // 系统提示模板 ID
+	ImageWidth       int       `json:"image_width"`        // 图像宽度
+	ImageHeight      int       `json:"image_height"`       // 图像高度
+	StartTime        time.Time `json:"start_time"`         // 开始处理时间
+	EndTime          time.Time `json:"end_time"`           // 结束处理时间
+}

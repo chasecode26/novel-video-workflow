@@ -18,6 +18,30 @@ import (
 
 // 全局常量定义
 const (
+	/*一位专业的导演*/
+	OllamaSystemDirector = `你是一位经验丰富的电影导演和视觉叙事专家。你的职责是：
+1. 深入理解文本内容的情感内核和故事脉络
+2. 设计富有戏剧张力的视觉分镜和镜头语言
+3. 运用专业电影制作知识创造引人入胜的画面构图
+4. 通过精准的视觉元素传达故事的情感和主题
+
+你需要掌握的核心技能：
+🎬 镜头语言：熟练运用各种拍摄角度（仰拍、俯拍、平拍）、景别（远景、全景、中景、近景、特写）和运动镜头（推拉摇移跟升降）
+📸 构图技巧：精通三分法、对角线构图、黄金分割、对称构图等经典构图法则
+🎨 色彩理论：善于运用色彩心理学，通过色调、饱和度、明暗对比营造特定氛围
+🎭 光影运用：掌握自然光、人工光的布光技巧，创造戏剧性的光影效果
+🎭 视觉叙事：能够通过视觉元素讲述故事，让画面本身传达情感和信息
+🎞️ 节奏把控：理解视听语言的节奏感，合理安排镜头切换和画面停留时间
+
+工作要求：
+1. 分析文本时要抓住关键情节点和情感转折
+2. 为每个重要场景设计最合适的视觉呈现方式
+3. 考虑画面的连贯性和整体视觉风格统一
+4. 注重细节刻画，让每个画面都有其独特的叙事价值
+5. 平衡艺术性与商业性，创造出既有深度又具观赏性的视觉作品
+
+请以专业导演的视角，为每个场景提供详细的视觉指导方案。`
+
 	// Ollama系统提示词 - 定义AI图像生成提示词工程师的角色和要求
 	OllamaSystemPrompt = `你是一个专业的AI图像生成提示词工程师。你的任务是根据给定的文本内容生成详细、具体的中文图像提示词(prompt)，以指导AI图像生成模型创建高质量的图像。
 
@@ -42,6 +66,7 @@ const (
 
 图像风格：%s
 
+故事背景：%s
 请严格按照以下四个要素组织提示词：
 1. 主体描述：
 2. 风格限定：
@@ -123,17 +148,80 @@ type OllamaResponse struct {
 }
 
 // GenerateImagePrompt 生成图像提示词
-func (c *OllamaClient) GenerateImagePrompt(text, style string) (string, error) {
-	return c.GenerateImagePromptWithTemplate(text, style, "")
+func (c *OllamaClient) GenerateImagePrompt(text, style, backgroundText string) (string, error) {
+	return c.GenerateImagePromptWithTemplate(text, style, "", backgroundText)
+}
+
+// 通读全文，分析场景和背景，情感，意境
+func (c *OllamaClient) AnalyzeSceneAndBackground(text string) (string, error) {
+	return c.AnalyzeSceneAndBackgroundWithTemplate("", text)
+}
+func (c *OllamaClient) AnalyzeSceneAndBackgroundWithTemplate(templateName, text string) (string, error) {
+	c.Logger.Info("开始使用Ollama分析场景和背景",
+		zap.String("text", text),
+		zap.String("template", templateName))
+	c.BroadcastService.SendMessage("Ollama", fmt.Sprintf("开始使用Ollama分析场景和背景:模板:%s,内容：%s", templateName, text), broadcast.GetTimeStr())
+
+	// 发送ollama提示词
+	request := OllamaRequest{
+		Model:  c.Model,
+		Prompt: OllamaSystemDirector,
+		System: OllamaSceneAnalysisSystemPrompt + "整体氛围是：" + templateName,
+		Stream: false,
+		Options: map[string]interface{}{
+			"temperature":    0.7,
+			"top_p":          0.9,
+			"repeat_penalty": 1.1,
+		},
+	}
+
+	endpoint := c.BaseURL + "/api/generate"
+	payload, err := json.Marshal(request)
+	if err != nil {
+		c.Logger.Error("序列化Ollama请求失败", zap.Error(err))
+		return "", fmt.Errorf("序列化请求失败: %v", err)
+	}
+
+	c.Logger.Info("发送Ollama导演角色提示词",
+		zap.String("endpoint", endpoint),
+		zap.String("model", request.Model))
+
+	c.BroadcastService.SendMessage("Ollama", fmt.Sprintf("🧬发送Ollama发送Ollama导演角色提示词:节点：%s,模型:%s，【系统】%s,【用户】%s", endpoint, request.Model, OllamaSystemDirector, OllamaSystemDirector), broadcast.GetTimeStr())
+
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(payload))
+	if err != nil {
+		c.Logger.Error("创建Ollama请求失败", zap.Error(err))
+		return "", fmt.Errorf("创建请求失败: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		c.Logger.Error("发送Ollama请求失败", zap.Error(err))
+		c.BroadcastService.SendMessage("Ollama", fmt.Sprintf("发送Ollama请求失败:%s", err.Error()), broadcast.GetTimeStr())
+
+		return "", fmt.Errorf("发送请求失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		c.Logger.Error("Ollama API返回错误状态码",
+			zap.Int("status", resp.StatusCode),
+			zap.String("body", string(body)))
+		return "", fmt.Errorf("Ollama API返回错误状态码 %d: %s", resp.StatusCode, string(body))
+	}
+	return "", nil
 }
 
 // GenerateImagePromptWithTemplate 使用指定模板生成图像提示词
-func (c *OllamaClient) GenerateImagePromptWithTemplate(text, style, templateName string) (string, error) {
+func (c *OllamaClient) GenerateImagePromptWithTemplate(text, style, templateName, backgroundText string) (string, error) {
 	c.Logger.Info("开始使用Ollama生成图像提示词",
 		zap.String("text", text),
 		zap.String("style", style),
 		zap.String("template", templateName))
-	c.BroadcastService.SendMessage("Ollama", fmt.Sprintf("开始使用Ollama生成图像提示词:风格：%s,模板:%s,内容：%s", style, templateName, text), broadcast.GetTimeStr())
+	c.BroadcastService.SendMessage("Ollama", fmt.Sprintf("开始使用Ollama生成图像提示词:风格：%s,模板:%s,内容：%s,背景：%s", style, templateName, text, backgroundText), broadcast.GetTimeStr())
 
 	// 如果指定了模板名称，则从数据库获取模板
 	var systemPrompt, userPrompt string
@@ -143,15 +231,15 @@ func (c *OllamaClient) GenerateImagePromptWithTemplate(text, style, templateName
 			c.Logger.Warn("获取提示词模板失败，使用默认模板", zap.String("template", templateName), zap.Error(err))
 			// 使用默认模板
 			systemPrompt = OllamaSystemPrompt
-			userPrompt = fmt.Sprintf(OllamaUserPromptTemplate, text, style)
+			userPrompt = fmt.Sprintf(OllamaUserPromptTemplate, text, style, backgroundText)
 		} else {
 			systemPrompt = template.SystemPrompt
-			userPrompt = fmt.Sprintf(template.UserTemplate, text, style)
+			userPrompt = fmt.Sprintf(template.UserTemplate, text, style, backgroundText)
 		}
 	} else {
 		// 使用默认模板
 		systemPrompt = OllamaSystemPrompt
-		userPrompt = fmt.Sprintf(OllamaUserPromptTemplate, text, style)
+		userPrompt = fmt.Sprintf(OllamaUserPromptTemplate, text, style, backgroundText)
 	}
 
 	request := OllamaRequest{

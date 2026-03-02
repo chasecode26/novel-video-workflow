@@ -252,15 +252,16 @@ output/
 
 系统提供以下MCP工具供调用：
 
-| 工具名称 | 功能描述 |
-|---------|----------|
+| 工具名称 | 功能描述            |
+|---------|-----------------|
 | `generate_indextts2_audio` | 使用IndexTTS2生成音频 |
-| `generate_subtitles_from_indextts2` | 生成字幕文件 |
-| `file_split_novel_into_chapters` | 分割小说章节 |
-| `generate_image_from_text` | 根据文本生成图像 |
-| `generate_image_from_image` | 图像风格转换 |
-| `generate_images_from_chapter` | 章节转图像 |
-| `generate_images_from_chapter_with_ai_prompt` | AI智能提示词图像生成 |
+| `generate_subtitles_from_indextts2` | 生成字幕文件          |
+| `file_split_novel_into_chapters` | 分割小说章节          |
+| `generate_image_from_text` | 根据文本生成图像        |
+| `generate_image_from_image` | 图像风格转换          |
+| `generate_images_from_chapter` | 章节转图像           |
+| `generate_images_from_chapter_with_ai_prompt` | AI智能提示词图像生成     |
+| `generate_image_from_lyric_ai_prompt` | 歌词生成MV          |
 
 ## ⚙️ 配置说明
 
@@ -292,7 +293,7 @@ output/
 
 - **Go**: 1.25+
 - **Ollama**: 用于AI推理
-- **Drawthings**: 用于图像生成
+- **Drawthings**: 用于图像、视频生成
 - **IndexTTS2**: 用于高质量语音合成
 - **Aegisub**: 用于字幕生成
 - **FFmpeg**: 用于音频处理

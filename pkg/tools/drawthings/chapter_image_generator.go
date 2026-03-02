@@ -3,6 +3,7 @@ package drawthings
 import (
 	"bufio"
 	"fmt"
+	"novel-video-workflow/pkg/database"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,7 +44,7 @@ func NewChapterImageGeneratorWithDB(logger *zap.Logger, db *gorm.DB) *ChapterIma
 		Client:           client,
 		OllamaClient:     ollamaClient,
 		Logger:           logger,
-		SelectedTemplate: "悬疑惊悚", // 默认使用悬疑惊悚模板
+		SelectedTemplate: "浪漫温馨", // 默认使用悬疑惊悚模板
 	}
 }
 
@@ -72,7 +73,7 @@ func getTemplateNameByStyle(styleDesc string) string {
 	} else if strings.Contains(styleDesc, "动作") {
 		return "动作冒险"
 	}
-	return "悬疑惊悚" // 默认返回悬疑惊悚
+	return "浪漫温馨" // 默认返回浪漫温馨
 }
 
 // ParagraphImage 生成的段落图像信息
@@ -133,9 +134,13 @@ func (c *ChapterImageGenerator) GenerateImagesFromChapter(chapterText, outputDir
 				styleDesc = DefaultSuspenseStyle
 			}
 		}
-
+		config_str, err := database.GetConfigAddStr(c.Client.DB)
+		if err != nil {
+			c.Logger.Error("获取配置失败", zap.Error(err))
+			return results, err
+		}
 		// 使用选中的模板生成图像提示词
-		imagePrompt, err := c.OllamaClient.GenerateImagePromptWithTemplate(trimmedPara, styleDesc, c.SelectedTemplate)
+		imagePrompt, err := c.OllamaClient.GenerateImagePromptWithTemplate(trimmedPara, styleDesc, c.SelectedTemplate, config_str)
 		if err != nil {
 			c.Logger.Warn("使用Ollama生成图像提示词失败，使用原始文本",
 				zap.Int("paragraph_index", i),
@@ -412,6 +417,7 @@ func (c *ChapterImageGenerator) GenerateImagesFromLyric(lyricText, outputDir str
 		c.Logger.Warn("DrawThings API不可用，将跳过图像生成步骤", zap.String("api_url", c.Client.BaseURL))
 		return results, fmt.Errorf("DrawThings API不可用，请确保Stable Diffusion WebUI正在运行在 %s", c.Client.BaseURL)
 	}
+	c.OllamaClient.AnalyzeSceneAndBackground(lyricText)
 
 	for i, lyricLine := range lyricLines {
 		trimmedLine := strings.TrimSpace(lyricLine)
@@ -531,9 +537,13 @@ func (c *ChapterImageGenerator) generateLyricPromptWithContext(currentLine strin
 
 	// 构建上下文字符串
 	contextStr := strings.Join(contextLines, " | ")
-
+	config_str, err := database.GetConfigAddStr(c.Client.DB)
+	if err != nil {
+		c.Logger.Error("获取配置失败", zap.Error(err))
+		return "", err
+	}
 	// 使用Ollama生成带上下文的提示词
-	prompt, err := c.OllamaClient.GenerateImagePromptWithTemplate(contextStr, c.CurrentStyle, c.SelectedTemplate)
+	prompt, err := c.OllamaClient.GenerateImagePromptWithTemplate(contextStr, c.CurrentStyle, c.SelectedTemplate, config_str)
 	if err != nil {
 		return "", err
 	}

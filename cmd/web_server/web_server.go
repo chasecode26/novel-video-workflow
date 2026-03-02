@@ -1378,7 +1378,15 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 		// 如果Ollama场景分析失败，回退到原来的段落处理方式
 		wp.logger.Info("Ollama分镜分析失败，回退到段落处理方式")
 		paragraphs := wp.splitChapterIntoParagraphsWithMerge(content)
+		config_str, err := database.GetConfigAddStr(wp.drawThingsGen.Client.DB)
+		if err != nil {
+			wp.logger.Warn("获取配置失败",
+				zap.Error(err))
+		}
+		// 先分析整个内容确定基调
+		wp.drawThingsGen.OllamaClient.AnalyzeSceneAndBackground(content)
 
+		// 再为每一个分镜进行出图
 		for idx, paragraph := range paragraphs {
 			if strings.TrimSpace(paragraph) == "" {
 				continue
@@ -1386,7 +1394,7 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 
 			// 记录Ollama生成图像提示词的过程
 			promptGenerationStartTime := time.Now()
-			optimizedPrompt, err := wp.drawThingsGen.OllamaClient.GenerateImagePrompt(paragraph, styleDesc)
+			optimizedPrompt, err := wp.drawThingsGen.OllamaClient.GenerateImagePrompt(paragraph, styleDesc, config_str)
 			promptGenerationEndTime := time.Now()
 
 			//手工拆分
