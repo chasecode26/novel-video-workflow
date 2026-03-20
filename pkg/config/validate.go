@@ -33,9 +33,9 @@ func ValidateConfig(cfg Config) error {
 	switch normalizeProviderName(cfg.TTS.Provider) {
 	case "":
 		errs = append(errs, ValidationError{Field: "tts.provider", Message: "is required"})
-	case "indextts2":
+	case "indextts2", "windows-indextts2":
 		if strings.TrimSpace(cfg.TTS.IndexTTS2.APIURL) == "" {
-			errs = append(errs, ValidationError{Field: "tts.indextts2.api_url", Message: "is required when provider is indextts2"})
+			errs = append(errs, ValidationError{Field: "tts.indextts2.api_url", Message: "is required when provider is indextts2 or windows-indextts2"})
 		}
 	case "mock":
 	default:
@@ -57,9 +57,9 @@ func ValidateConfig(cfg Config) error {
 	switch normalizeProviderName(cfg.Image.Provider) {
 	case "":
 		errs = append(errs, ValidationError{Field: "image.provider", Message: "is required"})
-	case "drawthings":
+	case "drawthings", "windows-drawthings":
 		if strings.TrimSpace(cfg.Image.DrawThings.APIURL) == "" {
-			errs = append(errs, ValidationError{Field: "image.drawthings.api_url", Message: "is required when provider is drawthings"})
+			errs = append(errs, ValidationError{Field: "image.drawthings.api_url", Message: "is required when provider is drawthings or windows-drawthings"})
 		}
 	case "mock":
 	default:

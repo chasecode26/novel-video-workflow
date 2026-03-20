@@ -13,7 +13,7 @@ workflow:
   cleanup_temp: true
 
 tts:
-  provider: indextts2
+  provider: windows-indextts2
   python_path: python
   indextts_path: ./tools/indexTTS
   voice_model: default
@@ -51,7 +51,7 @@ subtitle:
     use_automation: true
 
 image:
-  provider: drawthings
+  provider: windows-drawthings
   width: 512
   height: 896
   steps: 30

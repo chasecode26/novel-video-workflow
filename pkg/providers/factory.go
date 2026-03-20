@@ -45,6 +45,8 @@ func buildTTSProvider(cfg configpkg.Config, logger *zap.Logger) (TTSProvider, er
 	switch cfg.TTS.Provider {
 	case "", "mock":
 		return MockTTSProvider{baseDir: cfg.Paths.BaseDir}, nil
+	case "windows-indextts2":
+		return NewWindowsTTSProvider(cfg.Paths.BaseDir, cfg.TTS), nil
 	case "indextts2":
 		return LegacyIndexTTS2Provider{
 			baseDir: cfg.Paths.BaseDir,
@@ -73,6 +75,8 @@ func buildImageProvider(cfg configpkg.Config, logger *zap.Logger) (ImageProvider
 	switch cfg.Image.Provider {
 	case "", "mock":
 		return MockImageProvider{baseDir: cfg.Paths.BaseDir}, nil
+	case "windows-drawthings":
+		return NewWindowsImageProvider(cfg.Paths.BaseDir, cfg.Image), nil
 	case "drawthings":
 		return LegacyDrawThingsProvider{
 			baseDir: cfg.Paths.BaseDir,
