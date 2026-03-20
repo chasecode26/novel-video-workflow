@@ -69,7 +69,7 @@ func ValidateConfig(cfg Config) error {
 	switch normalizeProviderName(cfg.Project.Provider) {
 	case "":
 		errs = append(errs, ValidationError{Field: "project.provider", Message: "is required"})
-	case "capcut", "mock":
+	case "capcut", "windows-capcut", "mock":
 	default:
 		errs = append(errs, ValidationError{Field: "project.provider", Message: "unsupported provider"})
 	}

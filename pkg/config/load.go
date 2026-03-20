@@ -212,6 +212,8 @@ func normalizeProviderName(value string) string {
 		return "windows-drawthings"
 	case "capcut":
 		return "capcut"
+	case "windows-capcut":
+		return "windows-capcut"
 	case "mock":
 		return "mock"
 	default:

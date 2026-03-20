@@ -93,6 +93,8 @@ func buildProjectProvider(cfg configpkg.Config, logger *zap.Logger) (ProjectProv
 	switch cfg.Project.Provider {
 	case "", "mock":
 		return MockProjectProvider{baseDir: cfg.Paths.BaseDir}, nil
+	case "windows-capcut":
+		return NewWindowsCapcutProvider(cfg.Paths.BaseDir, cfg.Project), nil
 	case "capcut":
 		return LegacyCapCutProvider{baseDir: cfg.Paths.BaseDir, generator: capcut.NewCapcutGenerator(logger)}, nil
 	default:

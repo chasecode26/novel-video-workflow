@@ -86,10 +86,16 @@ func getAudioDuration(audioFilePath string) (int64, error) {
 
 // findJianyingDraftFolder 查找剪映草稿文件夹
 func findJianyingDraftFolder() (string, error) {
-	// 尝常见路径
+	// 获取用户主目录（跨平台）
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("获取用户主目录失败: %v", err)
+	}
+
+	// 尝试常见路径
 	possiblePaths := []string{
-		filepath.Join(os.Getenv("HOME"), "Movies", "JianyingPro", "User Data", "Projects", "com.lveditor.draft"),
-		filepath.Join(os.Getenv("HOME"), "Movies", "CapCut", "User Data", "Projects", "com.lveditor.draft"),
+		filepath.Join(homeDir, "Movies", "JianyingPro", "User Data", "Projects", "com.lveditor.draft"),
+		filepath.Join(homeDir, "Movies", "CapCut", "User Data", "Projects", "com.lveditor.draft"),
 	}
 
 	for _, path := range possiblePaths {

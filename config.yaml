@@ -64,7 +64,7 @@ image:
     scheduler: DPM++ 2M Trailing
 
 project:
-  provider: capcut
+  provider: windows-capcut
 
 database:
   path: ./db.sqlite
