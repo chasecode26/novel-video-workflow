@@ -3,6 +3,7 @@ package workflow
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"novel-video-workflow/pkg/database"
 
@@ -17,7 +18,24 @@ type RunStorage struct {
 // Storage defines the interface for persisting workflow runs.
 type Storage interface {
 	Save(run WorkflowRun) error
+	LoadByID(id uint) (WorkflowRunRecord, error)
 	LoadByChapterID(chapterID uint) (WorkflowRun, error)
+	LoadRecordByChapterID(chapterID uint) (WorkflowRunRecord, error)
+}
+
+// WorkflowRunRecord exposes persisted workflow run metadata needed by APIs.
+type WorkflowRunRecord struct {
+	ID            uint
+	ChapterID     uint
+	CurrentStep   Step
+	Status        Status
+	Artifacts     map[Step]ArtifactMetadata
+	ErrorCategory string
+	ErrorMessage  string
+	StartedAt     *time.Time
+	FinishedAt    *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 func NewRunStorage(db *gorm.DB) *RunStorage {
@@ -52,6 +70,66 @@ func (s *RunStorage) Save(run WorkflowRun) error {
 	record.FinishedAt = run.FinishedAt
 
 	return s.db.Save(&record).Error
+}
+
+func (s *RunStorage) LoadByID(id uint) (WorkflowRunRecord, error) {
+	if s == nil || s.db == nil {
+		return WorkflowRunRecord{}, fmt.Errorf("run storage is not initialized")
+	}
+
+	var record database.WorkflowRun
+	if err := s.db.First(&record, id).Error; err != nil {
+		return WorkflowRunRecord{}, err
+	}
+
+	artifacts, err := unmarshalArtifacts(record.ArtifactMetadata)
+	if err != nil {
+		return WorkflowRunRecord{}, err
+	}
+
+	return WorkflowRunRecord{
+		ID:            record.ID,
+		ChapterID:     record.ChapterID,
+		CurrentStep:   Step(record.CurrentStep),
+		Status:        Status(record.Status),
+		Artifacts:     artifacts,
+		ErrorCategory: record.ErrorCategory,
+		ErrorMessage:  record.ErrorMessage,
+		StartedAt:     record.StartedAt,
+		FinishedAt:    record.FinishedAt,
+		CreatedAt:     record.CreatedAt,
+		UpdatedAt:     record.UpdatedAt,
+	}, nil
+}
+
+func (s *RunStorage) LoadRecordByChapterID(chapterID uint) (WorkflowRunRecord, error) {
+	if s == nil || s.db == nil {
+		return WorkflowRunRecord{}, fmt.Errorf("run storage is not initialized")
+	}
+
+	var record database.WorkflowRun
+	if err := s.db.Where("chapter_id = ?", chapterID).First(&record).Error; err != nil {
+		return WorkflowRunRecord{}, err
+	}
+
+	artifacts, err := unmarshalArtifacts(record.ArtifactMetadata)
+	if err != nil {
+		return WorkflowRunRecord{}, err
+	}
+
+	return WorkflowRunRecord{
+		ID:            record.ID,
+		ChapterID:     record.ChapterID,
+		CurrentStep:   Step(record.CurrentStep),
+		Status:        Status(record.Status),
+		Artifacts:     artifacts,
+		ErrorCategory: record.ErrorCategory,
+		ErrorMessage:  record.ErrorMessage,
+		StartedAt:     record.StartedAt,
+		FinishedAt:    record.FinishedAt,
+		CreatedAt:     record.CreatedAt,
+		UpdatedAt:     record.UpdatedAt,
+	}, nil
 }
 
 func (s *RunStorage) LoadByChapterID(chapterID uint) (WorkflowRun, error) {

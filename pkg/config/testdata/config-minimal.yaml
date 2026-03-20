@@ -1,0 +1,10 @@
+paths:
+  base_dir: ./workspace
+tts:
+  provider: indextts2
+subtitle:
+  provider: aegisub
+image:
+  provider: drawthings
+project:
+  provider: capcut

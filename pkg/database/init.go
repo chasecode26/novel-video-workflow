@@ -1,6 +1,7 @@
 package database
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -27,7 +28,21 @@ func InitDatabaseFromConfig(logger *zap.Logger) error {
 		logger.Error("数据库初始化失败", zap.Error(err))
 		return err
 	}
+	if err := ensureWorkflowRunPersistence(); err != nil {
+		logger.Error("工作流运行状态初始化失败", zap.Error(err))
+		return err
+	}
 
 	logger.Info("数据库初始化成功")
 	return nil
+}
+
+func ensureWorkflowRunPersistence() error {
+	if DB == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+	if DB.Migrator().HasTable(&WorkflowRun{}) {
+		return nil
+	}
+	return DB.AutoMigrate(&WorkflowRun{})
 }

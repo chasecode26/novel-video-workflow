@@ -7,11 +7,15 @@ import (
 	"fmt"
 	"log"
 
+	configpkg "novel-video-workflow/pkg/config"
 	"novel-video-workflow/pkg/mcp"
-	"novel-video-workflow/pkg/workflow"
 
 	"go.uber.org/zap"
 )
+
+func loadBridgeConfig(configPath string) (configpkg.Config, error) {
+	return configpkg.LoadConfig(configPath)
+}
 
 func main() {
 	// 命令行参数
@@ -24,10 +28,8 @@ func main() {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
-	// 创建工作流处理器
-	_, err := workflow.NewProcessor(logger)
-	if err != nil {
-		log.Fatalf("创建工作流处理器失败: %v", err)
+	if _, err := loadBridgeConfig("config.yaml"); err != nil {
+		logger.Warn("加载 typed config 失败，继续启动桥接器", zap.Error(err))
 	}
 
 	// 创建MCP适配器

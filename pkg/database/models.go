@@ -29,6 +29,19 @@ type Chapter struct {
 	WorkflowParams string  `json:"workflow_params" gorm:"type:text"` // 工作流参数
 }
 
+// WorkflowRun 记录章节工作流执行状态和产物元数据。
+type WorkflowRun struct {
+	gorm.Model
+	ChapterID        uint       `json:"chapter_id" gorm:"not null;uniqueIndex"`
+	CurrentStep      string     `json:"current_step" gorm:"not null"`
+	Status           string     `json:"status" gorm:"not null"`
+	ArtifactMetadata string     `json:"artifact_metadata" gorm:"type:text;not null"`
+	ErrorCategory    string     `json:"error_category"`
+	ErrorMessage     string     `json:"error_message" gorm:"type:text"`
+	StartedAt        *time.Time `json:"started_at"`
+	FinishedAt       *time.Time `json:"finished_at"`
+}
+
 // Scene 场景模型，属于一个章节
 type Scene struct {
 	gorm.Model

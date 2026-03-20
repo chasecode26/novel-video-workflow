@@ -1,17 +1,14 @@
 package workflow
 
 import (
-	aegisub "novel-video-workflow/pkg/tools/aegisub"
-	drawthings "novel-video-workflow/pkg/tools/drawthings"
-	"novel-video-workflow/pkg/tools/file"
-	image "novel-video-workflow/pkg/tools/image"
-	"novel-video-workflow/pkg/tools/indextts2"
-	"novel-video-workflow/pkg/capcut"
-	"novel-video-workflow/pkg/database"
-
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"novel-video-workflow/pkg/capcut"
+	configpkg "novel-video-workflow/pkg/config"
+	"novel-video-workflow/pkg/database"
+	"novel-video-workflow/pkg/providers"
 
 	"go.uber.org/zap"
 )
@@ -37,39 +34,28 @@ type ChapterResult struct {
 }
 
 type Processor struct {
-	fileTool       *file.FileManager
-	ttsTool        *indextts2.IndexTTS2Client
-	aegisubTool    *aegisub.AegisubIntegration
-	imageTool      *image.ImageGenerator
-	drawThingsTool *drawthings.ChapterImageGenerator
-	capcutTool     *capcut.CapcutGenerator
-	logger         *zap.Logger
+	config     configpkg.Config
+	providers  providers.ProviderBundle
+	capcutTool *capcut.CapcutGenerator
+	logger     *zap.Logger
 }
 
-func NewProcessor(logger *zap.Logger) (*Processor, error) {
-	// 初始化数据库
-	if err := database.InitDatabaseFromConfig(logger); err != nil {
+func NewProcessor(cfg configpkg.Config, bundle providers.ProviderBundle, logger *zap.Logger) (*Processor, error) {
+	if err := database.InitDB(cfg.Database.Path); err != nil {
 		logger.Error("数据库初始化失败", zap.Error(err))
 		return nil, err
 	}
 
-	// 初始化各个工具
-	fileTool := file.NewFileManager()
-	ttsTool := indextts2.NewIndexTTS2Client(logger, "http://localhost:7860")
-	aegisubTool := aegisub.NewAegisubIntegration()
-	imageTool := image.NewImageGenerator(logger)
-	drawThingsTool := drawthings.NewChapterImageGenerator(logger)
-	capcutTool := capcut.NewCapcutGenerator(logger)
-
 	return &Processor{
-		fileTool:       fileTool,
-		ttsTool:        ttsTool,
-		aegisubTool:    aegisubTool,
-		imageTool:      imageTool,
-		drawThingsTool: drawThingsTool,
-		capcutTool:     capcutTool,
-		logger:         logger,
+		config:     cfg,
+		providers:  bundle,
+		capcutTool: capcut.NewCapcutGenerator(logger),
+		logger:     logger,
 	}, nil
+}
+
+func (p *Processor) GetProviders() providers.ProviderBundle {
+	return p.providers
 }
 
 func (p *Processor) CreateProject(name, description, globalPrompt, password string) (*database.Project, error) {
@@ -142,7 +128,7 @@ func (p *Processor) GetAllProjects() ([]database.Project, error) {
 }
 
 func (p *Processor) generateEditList(chapterDir string, chapterNum int,
-	ttsResult *indextts2.TTSResult, subtitleFile string, images []string) map[string]interface{} {
+	ttsResult *providers.TTSResult, subtitleFile string, images []string) map[string]interface{} {
 
 	return map[string]interface{}{
 		"chapter": chapterNum,

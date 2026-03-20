@@ -4,10 +4,38 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
+	"novel-video-workflow/pkg/database"
 	"novel-video-workflow/pkg/providers"
 )
+
+// ChapterLoader loads chapter and project data for workflow execution.
+type ChapterLoader interface {
+	LoadChapter(chapterID uint) (*database.Chapter, error)
+	LoadProject(projectID uint) (*database.Project, error)
+}
+
+// DBChapterLoader uses the real database to load chapter and project data.
+type DBChapterLoader struct{}
+
+func (d *DBChapterLoader) LoadChapter(chapterID uint) (*database.Chapter, error) {
+	return database.GetChapterByID(chapterID)
+}
+
+func (d *DBChapterLoader) LoadProject(projectID uint) (*database.Project, error) {
+	return database.GetProjectByID(projectID)
+}
+
+// EventPublisher publishes workflow lifecycle events.
+type EventPublisher interface {
+	PublishWorkflowStarted(chapterID uint)
+	PublishWorkflowStepChanged(chapterID uint, step string, status string)
+	PublishWorkflowLog(chapterID uint, level string, message string)
+	PublishWorkflowCompleted(chapterID uint, durationSec float64)
+	PublishWorkflowFailed(chapterID uint, failedStep string, errorMessage string)
+}
 
 // RunRequest initiates a workflow run.
 type RunRequest struct {
@@ -22,20 +50,38 @@ type RunResult struct {
 
 // Executor runs chapter workflows.
 type Executor struct {
-	providers providers.ProviderBundle
-	storage   Storage
+	providers      providers.ProviderBundle
+	storage        Storage
+	eventPublisher EventPublisher
+	chapterLoader  ChapterLoader
 }
 
 // NewExecutor creates a workflow executor.
 func NewExecutor(providers providers.ProviderBundle, storage Storage) *Executor {
 	return &Executor{
-		providers: providers,
-		storage:   storage,
+		providers:     providers,
+		storage:       storage,
+		chapterLoader: &DBChapterLoader{},
 	}
+}
+
+// SetEventPublisher sets the event publisher for the executor.
+func (e *Executor) SetEventPublisher(pub EventPublisher) {
+	e.eventPublisher = pub
+}
+
+// SetChapterLoader sets the chapter loader for the executor (for testing).
+func (e *Executor) SetChapterLoader(loader ChapterLoader) {
+	e.chapterLoader = loader
 }
 
 // RunChapterWorkflow executes the full chapter workflow.
 func (e *Executor) RunChapterWorkflow(ctx context.Context, req RunRequest) (RunResult, error) {
+	startTime := time.Now()
+	if e.eventPublisher != nil {
+		e.eventPublisher.PublishWorkflowStarted(req.ChapterID)
+	}
+
 	// Load or initialize run state
 	run, err := e.storage.LoadByChapterID(req.ChapterID)
 	if err != nil {
@@ -70,6 +116,9 @@ func (e *Executor) RunChapterWorkflow(ctx context.Context, req RunRequest) (RunR
 		if err := e.storage.Save(run); err != nil {
 			return RunResult{}, fmt.Errorf("save step transition: %w", err)
 		}
+		if e.eventPublisher != nil {
+			e.eventPublisher.PublishWorkflowStepChanged(req.ChapterID, string(step), string(StatusRunning))
+		}
 
 		// Execute step
 		artifact, err := e.executeStep(ctx, step, run)
@@ -80,6 +129,9 @@ func (e *Executor) RunChapterWorkflow(ctx context.Context, req RunRequest) (RunR
 			run.ErrorMessage = err.Error()
 			run.FinishedAt = &now
 			_ = e.storage.Save(run)
+			if e.eventPublisher != nil {
+				e.eventPublisher.PublishWorkflowFailed(req.ChapterID, string(step), err.Error())
+			}
 			return RunResult{}, err
 		}
 
@@ -91,10 +143,14 @@ func (e *Executor) RunChapterWorkflow(ctx context.Context, req RunRequest) (RunR
 
 	// Mark succeeded
 	now := time.Now()
+	durationSec := now.Sub(startTime).Seconds()
 	run.Status = StatusSucceeded
 	run.FinishedAt = &now
 	if err := e.storage.Save(run); err != nil {
 		return RunResult{}, fmt.Errorf("save final state: %w", err)
+	}
+	if e.eventPublisher != nil {
+		e.eventPublisher.PublishWorkflowCompleted(req.ChapterID, durationSec)
 	}
 
 	return RunResult{
@@ -119,10 +175,14 @@ func (e *Executor) executeStep(ctx context.Context, step Step, run WorkflowRun) 
 }
 
 func (e *Executor) executeTTS(ctx context.Context, run WorkflowRun) (ArtifactMetadata, error) {
+	chapter, err := e.chapterLoader.LoadChapter(run.ChapterID)
+	if err != nil {
+		return nil, fmt.Errorf("load chapter for TTS: %w", err)
+	}
+
 	req := providers.TTSRequest{
-		// TODO: Load chapter data from database
-		Text:      "test text",
-		ProjectID: "1",
+		Text:      chapter.Content,
+		ProjectID: fmt.Sprintf("%d", chapter.ProjectID),
 	}
 	result, err := e.providers.TTS.Generate(req)
 	if err != nil {
@@ -135,12 +195,17 @@ func (e *Executor) executeTTS(ctx context.Context, run WorkflowRun) (ArtifactMet
 }
 
 func (e *Executor) executeSubtitle(ctx context.Context, run WorkflowRun) (ArtifactMetadata, error) {
+	chapter, err := e.chapterLoader.LoadChapter(run.ChapterID)
+	if err != nil {
+		return nil, fmt.Errorf("load chapter for subtitle: %w", err)
+	}
+
 	ttsArtifact := run.Artifacts[StepTTS]
 	audioPath, _ := ttsArtifact["audio_path"].(string)
 
 	req := providers.SubtitleRequest{
 		AudioPath: audioPath,
-		Text:      "test text",
+		Text:      chapter.Content,
 	}
 	result, err := e.providers.Subtitle.Generate(req)
 	if err != nil {
@@ -153,8 +218,23 @@ func (e *Executor) executeSubtitle(ctx context.Context, run WorkflowRun) (Artifa
 }
 
 func (e *Executor) executeImage(ctx context.Context, run WorkflowRun) (ArtifactMetadata, error) {
+	chapter, err := e.chapterLoader.LoadChapter(run.ChapterID)
+	if err != nil {
+		return nil, fmt.Errorf("load chapter for image: %w", err)
+	}
+
+	project, err := e.chapterLoader.LoadProject(chapter.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("load project for image: %w", err)
+	}
+
+	prompt := chapter.Prompt
+	if prompt == "" {
+		prompt = project.GlobalPrompt
+	}
+
 	req := providers.ImageRequest{
-		Prompt: "test prompt",
+		Prompt: prompt,
 	}
 	result, err := e.providers.Image.Generate(req)
 	if err != nil {
@@ -166,8 +246,20 @@ func (e *Executor) executeImage(ctx context.Context, run WorkflowRun) (ArtifactM
 }
 
 func (e *Executor) executeProject(ctx context.Context, run WorkflowRun) (ArtifactMetadata, error) {
+	chapter, err := e.chapterLoader.LoadChapter(run.ChapterID)
+	if err != nil {
+		return nil, fmt.Errorf("load chapter for project: %w", err)
+	}
+
+	project, err := e.chapterLoader.LoadProject(chapter.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("load project for project step: %w", err)
+	}
+
+	chapterDir := filepath.Join("projects", project.Name, fmt.Sprintf("chapter_%d", chapter.ID))
+
 	req := providers.ProjectRequest{
-		ChapterDir: "/tmp/chapter",
+		ChapterDir: chapterDir,
 	}
 	result, err := e.providers.Project.Generate(req)
 	if err != nil {

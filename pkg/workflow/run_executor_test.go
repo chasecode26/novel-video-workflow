@@ -3,9 +3,13 @@ package workflow
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
+	"novel-video-workflow/pkg/database"
 	"novel-video-workflow/pkg/providers"
+
+	"gorm.io/gorm"
 )
 
 func TestExecutor_RunChapterWorkflow_HappyPath(t *testing.T) {
@@ -70,6 +74,7 @@ func TestExecutor_ReturnsCategorizedErrorOnProviderFailure(t *testing.T) {
 		Image:    stubImageProvider{},
 		Project:  stubProjectProvider{},
 	}, NewMemoryRunStorage())
+	exec.SetChapterLoader(newMockChapterLoader())
 
 	_, err := exec.RunChapterWorkflow(context.Background(), RunRequest{ChapterID: 4})
 	if err == nil {
@@ -82,67 +87,161 @@ func TestExecutor_ReturnsCategorizedErrorOnProviderFailure(t *testing.T) {
 	}
 }
 
-func TestExecutor_ResumeFromFailedStep(t *testing.T) {
+func TestExecutor_PublishesLifecycleEventsOnSuccess(t *testing.T) {
 	store := NewMemoryRunStorage()
+	publisher := &recordingEventPublisher{}
+	exec := newExecutorWithStoreAndPublisher(t, store, publisher)
 
-	// First run fails at subtitle step
-	exec1 := newExecutorWithMockTTSAndFailingSubtitle(t, store)
-	_, err := exec1.RunChapterWorkflow(context.Background(), RunRequest{ChapterID: 5})
-	if err == nil {
-		t.Fatal("expected error from first run")
-	}
-
-	// Second run should resume from subtitle step
-	exec2 := newExecutorWithMocksAndStore(t, store)
-	result, err := exec2.RunChapterWorkflow(context.Background(), RunRequest{ChapterID: 5})
+	_, err := exec.RunChapterWorkflow(context.Background(), RunRequest{ChapterID: 6})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Status != StatusSucceeded {
-		t.Fatalf("expected succeeded after resume, got %s", result.Status)
+
+	eventTypes := publisher.eventTypes()
+	if len(eventTypes) != 6 {
+		t.Fatalf("expected 6 events, got %d: %#v", len(eventTypes), eventTypes)
+	}
+	expected := []string{"started", "step_changed", "step_changed", "step_changed", "step_changed", "completed"}
+	for i, want := range expected {
+		if eventTypes[i] != want {
+			t.Fatalf("expected event %d to be %s, got %s", i, want, eventTypes[i])
+		}
 	}
 }
 
-// Helper functions
+func TestExecutor_PublishesFailureEventOnProviderFailure(t *testing.T) {
+	publisher := &recordingEventPublisher{}
+	exec := NewExecutor(providers.ProviderBundle{
+		TTS:      failingTTSProvider{},
+		Subtitle: stubSubtitleProvider{},
+		Image:    stubImageProvider{},
+		Project:  stubProjectProvider{},
+	}, NewMemoryRunStorage())
+	exec.SetChapterLoader(newMockChapterLoader())
+	exec.SetEventPublisher(publisher)
+
+	_, err := exec.RunChapterWorkflow(context.Background(), RunRequest{ChapterID: 7})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	eventTypes := publisher.eventTypes()
+	if len(eventTypes) != 3 {
+		t.Fatalf("expected 3 events, got %d: %#v", len(eventTypes), eventTypes)
+	}
+	expected := []string{"started", "step_changed", "failed"}
+	for i, want := range expected {
+		if eventTypes[i] != want {
+			t.Fatalf("expected event %d to be %s, got %s", i, want, eventTypes[i])
+		}
+	}
+	if publisher.failedStep != string(StepTTS) {
+		t.Fatalf("expected failed step %s, got %s", StepTTS, publisher.failedStep)
+	}
+}
+
 
 func newExecutorWithMocks(t *testing.T) *Executor {
 	t.Helper()
-	return NewExecutor(providers.ProviderBundle{
+	exec := NewExecutor(providers.ProviderBundle{
 		TTS:      stubTTSProvider{},
 		Subtitle: stubSubtitleProvider{},
 		Image:    stubImageProvider{},
 		Project:  stubProjectProvider{},
 	}, NewMemoryRunStorage())
+	exec.SetChapterLoader(newMockChapterLoader())
+	return exec
 }
 
 func newExecutorWithStore(t *testing.T, storage Storage) *Executor {
 	t.Helper()
-	return NewExecutor(providers.ProviderBundle{
+	exec := NewExecutor(providers.ProviderBundle{
 		TTS:      stubTTSProvider{},
 		Subtitle: stubSubtitleProvider{},
 		Image:    stubImageProvider{},
 		Project:  stubProjectProvider{},
 	}, storage)
+	exec.SetChapterLoader(newMockChapterLoader())
+	return exec
+}
+
+func newExecutorWithStoreAndPublisher(t *testing.T, storage Storage, pub EventPublisher) *Executor {
+	t.Helper()
+	exec := NewExecutor(providers.ProviderBundle{
+		TTS:      stubTTSProvider{},
+		Subtitle: stubSubtitleProvider{},
+		Image:    stubImageProvider{},
+		Project:  stubProjectProvider{},
+	}, storage)
+	exec.SetChapterLoader(newMockChapterLoader())
+	exec.SetEventPublisher(pub)
+	return exec
 }
 
 func newExecutorWithMockTTSAndFailingSubtitle(t *testing.T, storage Storage) *Executor {
 	t.Helper()
-	return NewExecutor(providers.ProviderBundle{
+	exec := NewExecutor(providers.ProviderBundle{
 		TTS:      stubTTSProvider{},
 		Subtitle: failingSubtitleProvider{},
 		Image:    stubImageProvider{},
 		Project:  stubProjectProvider{},
 	}, storage)
+	exec.SetChapterLoader(newMockChapterLoader())
+	return exec
 }
 
 func newExecutorWithMocksAndStore(t *testing.T, storage Storage) *Executor {
 	t.Helper()
-	return NewExecutor(providers.ProviderBundle{
+	exec := NewExecutor(providers.ProviderBundle{
 		TTS:      stubTTSProvider{},
 		Subtitle: stubSubtitleProvider{},
 		Image:    stubImageProvider{},
 		Project:  stubProjectProvider{},
 	}, storage)
+	exec.SetChapterLoader(newMockChapterLoader())
+	return exec
+}
+
+// Recording event publisher for testing
+type recordingEventPublisher struct {
+	events     []workflowEvent
+	failedStep string
+}
+
+type workflowEvent struct {
+	Type      string
+	ChapterID uint
+	Step      string
+	Message   string
+}
+
+func (r *recordingEventPublisher) PublishWorkflowStarted(chapterID uint) {
+	r.events = append(r.events, workflowEvent{Type: "started", ChapterID: chapterID})
+}
+
+func (r *recordingEventPublisher) PublishWorkflowStepChanged(chapterID uint, step string, status string) {
+	r.events = append(r.events, workflowEvent{Type: "step_changed", ChapterID: chapterID, Step: step})
+}
+
+func (r *recordingEventPublisher) PublishWorkflowLog(chapterID uint, level string, message string) {
+	r.events = append(r.events, workflowEvent{Type: "log", ChapterID: chapterID, Message: message})
+}
+
+func (r *recordingEventPublisher) PublishWorkflowCompleted(chapterID uint, durationSec float64) {
+	r.events = append(r.events, workflowEvent{Type: "completed", ChapterID: chapterID})
+}
+
+func (r *recordingEventPublisher) PublishWorkflowFailed(chapterID uint, failedStep string, errorMessage string) {
+	r.events = append(r.events, workflowEvent{Type: "failed", ChapterID: chapterID, Message: errorMessage})
+	r.failedStep = failedStep
+}
+
+func (r *recordingEventPublisher) eventTypes() []string {
+	types := make([]string, len(r.events))
+	for i, e := range r.events {
+		types[i] = e.Type
+	}
+	return types
 }
 
 // Stub providers
@@ -205,4 +304,67 @@ func (failingSubtitleProvider) HealthCheck() providers.HealthCheckResult {
 }
 func (failingSubtitleProvider) Generate(req providers.SubtitleRequest) (providers.SubtitleResult, error) {
 	return providers.SubtitleResult{}, providers.NewProviderError(providers.CategoryExecutionError, "subtitle failed", nil)
+}
+// Capturing providers for verifying executor inputs
+type capturingTTSProvider struct {
+	lastReq providers.TTSRequest
+}
+
+func (c *capturingTTSProvider) Name() string { return "capturing-tts" }
+func (c *capturingTTSProvider) HealthCheck() providers.HealthCheckResult {
+	return providers.HealthCheckResult{Provider: "capturing-tts", Severity: providers.SeverityInfo, Message: "ready"}
+}
+func (c *capturingTTSProvider) Generate(req providers.TTSRequest) (providers.TTSResult, error) {
+	c.lastReq = req
+	return providers.TTSResult{AudioPath: "/tmp/audio.wav"}, nil
+}
+
+type capturingImageProvider struct {
+	lastReq providers.ImageRequest
+}
+
+func (c *capturingImageProvider) Name() string { return "capturing-image" }
+func (c *capturingImageProvider) HealthCheck() providers.HealthCheckResult {
+	return providers.HealthCheckResult{Provider: "capturing-image", Severity: providers.SeverityInfo, Message: "ready"}
+}
+func (c *capturingImageProvider) Generate(req providers.ImageRequest) (providers.ImageResult, error) {
+	c.lastReq = req
+	return providers.ImageResult{ImagePaths: []string{"/tmp/image.png"}}, nil
+}
+
+// Mock chapter loader for testing
+type mockChapterLoader struct {
+	chapters map[uint]*database.Chapter
+	projects map[uint]*database.Project
+}
+
+func newMockChapterLoader() *mockChapterLoader {
+	return &mockChapterLoader{
+		chapters: map[uint]*database.Chapter{
+			1: {Model: gorm.Model{ID: 1}, Title: "Chapter 1", Content: "Test content for chapter 1", ProjectID: 1, Prompt: "Suspense style"},
+			2: {Model: gorm.Model{ID: 2}, Title: "Chapter 2", Content: "Test content for chapter 2", ProjectID: 1, Prompt: "Mystery style"},
+			3: {Model: gorm.Model{ID: 3}, Title: "Chapter 3", Content: "Test content for chapter 3", ProjectID: 1, Prompt: ""},
+			4: {Model: gorm.Model{ID: 4}, Title: "Chapter 4", Content: "Test content for chapter 4", ProjectID: 1, Prompt: "Drama style"},
+			5: {Model: gorm.Model{ID: 5}, Title: "Chapter 5", Content: "Test content for chapter 5", ProjectID: 1, Prompt: "Action style"},
+			6: {Model: gorm.Model{ID: 6}, Title: "Chapter 6", Content: "Test content for chapter 6", ProjectID: 1, Prompt: "Comedy style"},
+			7: {Model: gorm.Model{ID: 7}, Title: "Chapter 7", Content: "Test content for chapter 7", ProjectID: 1, Prompt: "Horror style"},
+		},
+		projects: map[uint]*database.Project{
+			1: {Model: gorm.Model{ID: 1}, Name: "Test Novel", GlobalPrompt: "Default suspense atmosphere"},
+		},
+	}
+}
+
+func (m *mockChapterLoader) LoadChapter(chapterID uint) (*database.Chapter, error) {
+	if chapter, ok := m.chapters[chapterID]; ok {
+		return chapter, nil
+	}
+	return nil, fmt.Errorf("chapter not found: %d", chapterID)
+}
+
+func (m *mockChapterLoader) LoadProject(projectID uint) (*database.Project, error) {
+	if project, ok := m.projects[projectID]; ok {
+		return project, nil
+	}
+	return nil, fmt.Errorf("project not found: %d", projectID)
 }

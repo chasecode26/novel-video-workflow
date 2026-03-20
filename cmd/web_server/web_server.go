@@ -11,10 +11,16 @@ import (
 	"net/url"
 	"novel-video-workflow/pkg/broadcast"
 	"novel-video-workflow/pkg/capcut"
+	configpkg "novel-video-workflow/pkg/config"
 	"novel-video-workflow/pkg/database"
+	"novel-video-workflow/pkg/healthcheck"
+	mcp_pkg "novel-video-workflow/pkg/mcp"
+	"novel-video-workflow/pkg/providers"
 	"novel-video-workflow/pkg/tools/aegisub"
+	"novel-video-workflow/pkg/tools/drawthings"
 	"novel-video-workflow/pkg/tools/file"
 	"novel-video-workflow/pkg/tools/indextts2"
+	workflow_pkg "novel-video-workflow/pkg/workflow"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -26,9 +32,6 @@ import (
 	"time"
 
 	api_pkg "novel-video-workflow/pkg/api"
-	mcp_pkg "novel-video-workflow/pkg/mcp"
-	"novel-video-workflow/pkg/tools/drawthings"
-	workflow_pkg "novel-video-workflow/pkg/workflow"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -56,16 +59,52 @@ type ToolInfo struct {
 var mcpTools []ToolInfo
 var mcpServerInstance *mcp_pkg.Server
 
+func loadAppComponents(configPath string) (configpkg.Config, providers.ProviderBundle, *workflow_pkg.Processor, error) {
+	cfg, err := configpkg.LoadConfig(configPath)
+	if err != nil {
+		return configpkg.Config{}, providers.ProviderBundle{}, nil, fmt.Errorf("加载配置文件失败: %v", err)
+	}
+
+	bundle, err := providers.BuildProviders(cfg)
+	if err != nil {
+		return configpkg.Config{}, providers.ProviderBundle{}, nil, fmt.Errorf("构建 providers 失败: %v", err)
+	}
+
+	report := healthcheck.NewService(bundle).Run()
+	if !report.CanStart {
+		return configpkg.Config{}, providers.ProviderBundle{}, nil, fmt.Errorf("启动前健康检查失败: %d blocking issues", len(report.Blocking))
+	}
+
+	logger := zap.NewNop()
+	processor, err := workflow_pkg.NewProcessor(cfg, bundle, logger)
+	if err != nil {
+		return configpkg.Config{}, providers.ProviderBundle{}, nil, fmt.Errorf("创建工作流处理器失败: %v", err)
+	}
+
+	return cfg, bundle, processor, nil
+}
+
+func buildWorkflowAPIs(bundle providers.ProviderBundle) (*api_pkg.SystemCheckAPI, *api_pkg.WorkflowRunAPI) {
+	runStorage := workflow_pkg.NewRunStorage(database.DB)
+	runExecutor := workflow_pkg.NewExecutor(bundle, runStorage)
+	runExecutor.SetEventPublisher(&api_pkg.BroadcastEventPublisher{})
+	return api_pkg.NewSystemCheckAPI(bundle), api_pkg.NewWorkflowRunAPI(runExecutor, runStorage)
+}
+
 // 启动MCP服务器
 func startMCPServer() error {
 	// 创建logger
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
-	// 创建工作流处理器
-	processor, err := workflow_pkg.NewProcessor(logger)
+	configPath, err := resolveConfigPath()
 	if err != nil {
-		return fmt.Errorf("创建工作流处理器失败: %v", err)
+		return fmt.Errorf("解析配置文件路径失败: %v", err)
+	}
+
+	_, _, processor, err := loadAppComponents(configPath)
+	if err != nil {
+		return err
 	}
 
 	// 创建MCP服务器，使用当前全局样式
@@ -102,6 +141,27 @@ func loadToolsList() {
 		fallbackToolList()
 		return
 	}
+}
+
+func resolveConfigPath() (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	configPath := filepath.Join(wd, "config.yaml")
+	if _, err := os.Stat(configPath); err == nil {
+		return configPath, nil
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	configPath = filepath.Join(filepath.Dir(exe), "config.yaml")
+	if _, err := os.Stat(configPath); err != nil {
+		return "", err
+	}
+	return configPath, nil
 }
 
 // fallbackToolList 提供备用工具列表
@@ -1249,6 +1309,10 @@ func webServerMain() {
 	r.POST("/api/workflow/scene/record-params", workflowTrackingAPI.RecordSceneWorkflowParams)
 	r.GET("/api/workflow/scene/:id/params", workflowTrackingAPI.GetSceneWorkflowParams)
 	r.GET("/api/chapter/:id/scenes", workflowTrackingAPI.GetScenesByChapter)
+
+	systemCheckAPI, workflowRunAPI := buildWorkflowAPIs(mcpServerInstance.GetProcessor().GetProviders())
+	systemCheckAPI.RegisterRoutes(r)
+	workflowRunAPI.RegisterRoutes(r)
 
 	// 章节和场景管理相关路由
 	chapterSceneAPI := api_pkg.NewChapterSceneAPI()

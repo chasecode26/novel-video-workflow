@@ -7,13 +7,26 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/glebarez/sqlite"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
 var DB *gorm.DB
+
+// CloseDB closes the current shared database connection when one exists.
+func CloseDB() error {
+	if DB == nil {
+		return nil
+	}
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return err
+	}
+	DB = nil
+	return sqlDB.Close()
+}
 
 // InitDB 初始化数据库连接
 func InitDB(dbPath string) error {
@@ -58,7 +71,7 @@ func InitDB(dbPath string) error {
 // migrateDB 执行数据库迁移
 func migrateDB(db *gorm.DB) error {
 	// 自动迁移表结构，包括新的提示词模板表
-	err := db.AutoMigrate(&Project{}, &Chapter{}, &Scene{}, &PromptTemplate{}, &Configuration{})
+	err := db.AutoMigrate(&Project{}, &Chapter{}, &WorkflowRun{}, &Scene{}, &PromptTemplate{}, &Configuration{})
 	if err != nil {
 		return fmt.Errorf("自动迁移表结构失败: %v", err)
 	}

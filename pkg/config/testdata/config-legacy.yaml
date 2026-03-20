@@ -1,0 +1,22 @@
+paths:
+  base_dir: ./workspace
+
+tts:
+  engine: indexTTS
+  python_path: python
+  indextts2:
+    api_url: http://127.0.0.1:7860
+    timeout_seconds: 300
+    max_retries: 3
+
+subtitle:
+  generator: aegisub
+  aegisub_path: C:/Program Files/Aegisub/aegisub64.exe
+  script_path: ./pkg/tools/aegisub/aegisub_subtitle_gen.sh
+
+image:
+  engine: drawthings
+
+drawthings:
+  api_url: http://127.0.0.1:7861
+  scheduler: DPM++ 2M Karras

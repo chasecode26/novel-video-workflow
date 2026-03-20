@@ -1,0 +1,23 @@
+paths:
+  base_dir: ./workspace
+
+tts:
+  engine: indexTTS
+indextts2:
+  api_url: http://legacy-host:9000
+  timeout_seconds: 45
+  max_retries: 7
+
+subtitle:
+  generator: aegisub
+  aegisub_path: D:/tools/Aegisub/aegisub-cli.exe
+  script_path: ./custom/subtitles.lua
+  use_automation: false
+
+image:
+  engine: drawthings
+  drawthings_model: custom-model.safetensors
+  drawthings_scheduler: Euler a
+
+drawthings:
+  api_url: http://legacy-drawthings:8080
