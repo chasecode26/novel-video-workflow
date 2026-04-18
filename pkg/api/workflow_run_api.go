@@ -165,18 +165,28 @@ func (api *WorkflowRunAPI) StartRun(c *gin.Context) {
 		go func(chapterID uint) {
 			_, _ = api.executor.RunChapterWorkflow(context.Background(), workflow.RunRequest{ChapterID: chapterID})
 		}(req.ChapterID)
+	} else if record.Status != workflow.StatusRunning {
+		go func(chapterID uint) {
+			_, _ = api.executor.RunChapterWorkflow(context.Background(), workflow.RunRequest{ChapterID: chapterID})
+		}(req.ChapterID)
+	}
+
+	artifactMeta := ""
+	if encoded, marshalErr := json.Marshal(record.Artifacts); marshalErr == nil {
+		artifactMeta = string(encoded)
 	}
 
 	resource := WorkflowRunResponse{
-		ID:          record.ID,
-		ProjectID:   chapter.ProjectID,
-		ChapterID:   chapter.ID,
-		Status:      string(record.Status),
-		CurrentStep: string(record.CurrentStep),
-		StartedAt:   derefTime(record.StartedAt),
-		CompletedAt: derefTime(record.FinishedAt),
-		CreatedAt:   record.CreatedAt,
-		UpdatedAt:   record.UpdatedAt,
+		ID:           record.ID,
+		ProjectID:    chapter.ProjectID,
+		ChapterID:    chapter.ID,
+		Status:       string(record.Status),
+		CurrentStep:  string(record.CurrentStep),
+		ArtifactMeta: artifactMeta,
+		StartedAt:    derefTime(record.StartedAt),
+		CompletedAt:  derefTime(record.FinishedAt),
+		CreatedAt:    record.CreatedAt,
+		UpdatedAt:    record.UpdatedAt,
 	}
 
 	c.JSON(http.StatusCreated, SuccessResponse{
@@ -216,6 +226,11 @@ func (api *WorkflowRunAPI) GetRun(c *gin.Context) {
 		return
 	}
 
+	artifactMeta := ""
+	if encoded, marshalErr := json.Marshal(record.Artifacts); marshalErr == nil {
+		artifactMeta = string(encoded)
+	}
+
 	c.JSON(http.StatusOK, WorkflowRunResponse{
 		ID:           record.ID,
 		ProjectID:    chapter.ProjectID,
@@ -223,6 +238,7 @@ func (api *WorkflowRunAPI) GetRun(c *gin.Context) {
 		Status:       string(record.Status),
 		CurrentStep:  string(record.CurrentStep),
 		ErrorMessage: record.ErrorMessage,
+		ArtifactMeta: artifactMeta,
 		StartedAt:    derefTime(record.StartedAt),
 		CompletedAt:  derefTime(record.FinishedAt),
 		CreatedAt:    record.CreatedAt,

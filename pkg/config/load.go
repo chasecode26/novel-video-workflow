@@ -93,6 +93,11 @@ func defaultConfig() Config {
 				Model:     "dreamshaper_8.safetensors",
 				Scheduler: "DPM++ 2M Trailing",
 			},
+			ComfyUI: ImageComfyUIConfig{
+				APIURL:         "http://127.0.0.1:8188",
+				OutputNodeID:   "9",
+				FilenamePrefix: "novel_workflow",
+			},
 		},
 		Project: ProjectConfig{
 			Provider: "capcut",
@@ -152,6 +157,21 @@ func applyLegacyMapping(loader *viper.Viper, cfg *Config) {
 	if value, ok := firstSetString(loader, "image.drawthings_scheduler", "drawthings.scheduler"); ok {
 		cfg.Image.DrawThings.Scheduler = value
 	}
+	if value, ok := firstSetString(loader, "image.comfyui.api_url", "comfyui.api_url"); ok {
+		cfg.Image.ComfyUI.APIURL = value
+	}
+	if value, ok := firstSetString(loader, "image.comfyui.checkpoint", "comfyui.checkpoint"); ok {
+		cfg.Image.ComfyUI.Checkpoint = value
+	}
+	if value, ok := firstSetString(loader, "image.comfyui.workflow_file", "comfyui.workflow_file"); ok {
+		cfg.Image.ComfyUI.WorkflowFile = value
+	}
+	if value, ok := firstSetString(loader, "image.comfyui.output_node_id", "comfyui.output_node_id"); ok {
+		cfg.Image.ComfyUI.OutputNodeID = value
+	}
+	if value, ok := firstSetString(loader, "image.comfyui.filename_prefix", "comfyui.filename_prefix"); ok {
+		cfg.Image.ComfyUI.FilenamePrefix = value
+	}
 
 	cfg.Project.Provider = normalizeProviderName(cfg.Project.Provider)
 	if cfg.Project.Provider == "" {
@@ -210,6 +230,8 @@ func normalizeProviderName(value string) string {
 		return "drawthings"
 	case "windows-drawthings":
 		return "windows-drawthings"
+	case "comfyui":
+		return "comfyui"
 	case "capcut":
 		return "capcut"
 	case "windows-capcut":

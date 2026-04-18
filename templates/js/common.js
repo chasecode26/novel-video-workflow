@@ -62,12 +62,8 @@ function switchTab(tabName) {
         }
     }
     
-    // 如果切换到工具标签，则加载工具列表
-    if (tabName === 'tools') {
-        loadToolsList();
-    }
     // 如果切换到文件管理标签，则加载文件列表
-    else if (tabName === 'filemanager') {
+    if (tabName === 'filemanager') {
         loadFileManager();
     }
     // 如果切换到章节管理标签，则加载章节列表
@@ -111,17 +107,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// 初始化 - 加载工具列表
 window.onload = function() {
-    // 在初始状态下加载工具列表
-    if (document.querySelector('.nav-tab.active').textContent.includes('MCP 工具')) {
-        loadToolsList();
-    }
-
-    // 加载风格模板选择器
     loadStyleTemplates();
-    
-    // 加载保存的设置
     loadSavedSettings();
 };
 
@@ -167,28 +154,27 @@ function escapeHtml(text) {
 }
 
 // 一键出片功能
-function oneClickFilm() {
-    // 从localStorage获取保存的风格设置
-    const savedTemplateId = localStorage.getItem('selectedStyleTemplateId') || '';
-    const savedThreadCount = localStorage.getItem('threadCount') || '';
-    
-    fetch('/api/one-click-film', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            prompt_template_id: savedTemplateId || null,
-            thread_count: savedThreadCount || null
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        console.log('一键出片工作流已启动:', data);
-    })
-    .catch(error => {
+async function oneClickFilm() {
+    try {
+        const chaptersResponse = await apiRequest('/api/chapters');
+        const chapters = Array.isArray(chaptersResponse?.chapters) ? chaptersResponse.chapters : [];
+        if (!chapters.length) {
+            console.error('没有可执行的章节');
+            return;
+        }
+
+        const chapter = chapters[0];
+        const runResponse = await apiRequest('/api/workflow/runs', {
+            method: 'POST',
+            body: JSON.stringify({
+                chapter_id: chapter.id || chapter.ID
+            })
+        });
+
+        console.log('一键出片工作流已启动:', runResponse);
+    } catch (error) {
         console.error('一键出片执行错误:', error);
-    });
+    }
 }
 
 // 停止执行功能
@@ -229,20 +215,3 @@ function handleDrop(e) {
     }
 }
 
-// 处理文件夹处理
-function processFolder() {
-    fetch('/api/process-folder', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({})
-    })
-    .then(response => response.json())
-    .then(data => {
-        console.log('Folder processing initiated:', data);
-    })
-    .catch(error => {
-        console.error('Error processing folder:', error);
-    });
-}

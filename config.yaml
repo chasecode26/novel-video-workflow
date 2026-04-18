@@ -51,7 +51,7 @@ subtitle:
     use_automation: true
 
 image:
-  provider: windows-drawthings
+  provider: comfyui
   width: 512
   height: 896
   steps: 30
@@ -62,6 +62,11 @@ image:
     api_url: http://127.0.0.1:7861
     model: dreamshaper_8.safetensors
     scheduler: DPM++ 2M Trailing
+  comfyui:
+    api_url: http://127.0.0.1:8188
+    checkpoint: dreamshaper-8-1.5.safetensors
+    output_node_id: "9"
+    filename_prefix: novel_workflow
 
 project:
   provider: windows-capcut
@@ -71,7 +76,7 @@ database:
 
 ollama:
   api_url: http://127.0.0.1:11434
-  model: llama3:8b
+  model: qwen3.5:9b
   timeout_seconds: 120
   max_tokens: 2048
   temperature: 0.7

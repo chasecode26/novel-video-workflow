@@ -80,12 +80,21 @@ type ImageConfig struct {
 	StylePreset    string                `mapstructure:"style_preset"`
 	NegativePrompt string                `mapstructure:"negative_prompt"`
 	DrawThings     ImageDrawThingsConfig `mapstructure:"drawthings"`
+	ComfyUI        ImageComfyUIConfig    `mapstructure:"comfyui"`
 }
 
 type ImageDrawThingsConfig struct {
 	APIURL    string `mapstructure:"api_url"`
 	Model     string `mapstructure:"model"`
 	Scheduler string `mapstructure:"scheduler"`
+}
+
+type ImageComfyUIConfig struct {
+	APIURL         string `mapstructure:"api_url"`
+	Checkpoint     string `mapstructure:"checkpoint"`
+	WorkflowFile   string `mapstructure:"workflow_file"`
+	OutputNodeID   string `mapstructure:"output_node_id"`
+	FilenamePrefix string `mapstructure:"filename_prefix"`
 }
 
 type ProjectConfig struct {

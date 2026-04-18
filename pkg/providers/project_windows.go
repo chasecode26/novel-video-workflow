@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"novel-video-workflow/pkg/capcut"
 	configpkg "novel-video-workflow/pkg/config"
 )
 
@@ -18,11 +19,15 @@ type WindowsCapcutProvider struct {
 }
 
 func NewWindowsCapcutProvider(baseDir string, cfg configpkg.ProjectConfig) WindowsCapcutProvider {
-	return WindowsCapcutProvider{
-		baseDir:      baseDir,
-		config:       cfg,
-		generateFunc: nil, // Will use CapCut generator in future integration
+	provider := WindowsCapcutProvider{
+		baseDir: baseDir,
+		config:  cfg,
 	}
+	generator := capcut.NewCapcutGenerator(nil)
+	provider.generateFunc = func(chapterDir, projectDir string) error {
+		return generator.GenerateProjectWithOutputDir(chapterDir, projectDir)
+	}
+	return provider
 }
 
 func (p WindowsCapcutProvider) Name() string { return "windows-capcut" }

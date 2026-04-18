@@ -100,7 +100,7 @@ type OllamaClient struct {
 	DB               *gorm.DB // 数据库连接，用于获取提示词模板
 }
 
-var defaultModel = "qwen3:4b"
+var defaultModel = "qwen3.5:9b"
 
 // NewOllamaClient 创建新的Ollama客户端实例
 func NewOllamaClient(logger *zap.Logger, baseURL string, model string, db *gorm.DB) *OllamaClient {

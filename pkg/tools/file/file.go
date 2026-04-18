@@ -123,15 +123,14 @@ func (fm *FileManager) ExtractChapterTxt(fileDir string) (ChapterContentMap, err
 	var currentChapterNum int
 
 	scanner := bufio.NewScanner(fileHandle)
-	// 使用正则表达式匹配章节标记
-	// 匹配以"第x章"、"第xx章"、"第xxx章"等开头的行
-	re := regexp.MustCompile(`(?m)^\s*第[\p{N}\p{L}]+[章节][^\r\n]*$`)
+	// 兼容“第一章 标题”“第12章 标题”“第十二节 标题”等常见单文件小说章节头。
+	re := regexp.MustCompile(`^\s*第\s*([0-9零一二三四五六七八九十百千万两〇]+)\s*([章节回节卷篇幕集])(?:\s+|[:：\-—_])?(.*)$`)
 
 	for scanner.Scan() {
 		text := scanner.Text()
 
 		// 检查当前行是否为章节标记
-		if match := re.FindString(text); match != "" {
+		if matches := re.FindStringSubmatch(text); len(matches) > 0 {
 			// 如果已经找到了上一个章节的内容，保存它
 			if currentChapterFound {
 				chapterMap[currentChapterNum] = strings.TrimSpace(currentContent.String())
@@ -139,15 +138,16 @@ func (fm *FileManager) ExtractChapterTxt(fileDir string) (ChapterContentMap, err
 			}
 
 			// 提取章节数字
-			numStr := strings.TrimPrefix(match, "第")
-			numStr = strings.TrimSuffix(numStr, "章")
-			numStr = strings.TrimSpace(numStr)
+			numStr := strings.TrimSpace(matches[1])
 
 			// 转换为阿拉伯数字
 			if atoi, err := strconv.Atoi(numStr); err != nil {
 				currentChapterNum = fm.convertChineseNumberToArabic(numStr)
 			} else {
 				currentChapterNum = atoi
+			}
+			if currentChapterNum <= 0 {
+				currentChapterNum = len(chapterMap) + 1
 			}
 
 			currentChapterFound = true
@@ -178,42 +178,58 @@ func (fm *FileManager) ExtractChapterTxt(fileDir string) (ChapterContentMap, err
 
 // ConvertChineseNumberToArabic 将中文数字转换为阿拉伯数字
 func (fm *FileManager) convertChineseNumberToArabic(chineseNum string) int {
-	chineseToArabic := map[string]int{
-		// 基础数字
-		"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
-		"六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
-		// 十一到二十
-		"十一": 11, "十二": 12, "十三": 13, "十四": 14, "十五": 15,
-		"十六": 16, "十七": 17, "十八": 18, "十九": 19, "二十": 20,
-		// 二十一到三十
-		"二十一": 21, "二十二": 22, "二十三": 23, "二十四": 24, "二十五": 25,
-		"二十六": 26, "二十七": 27, "二十八": 28, "二十九": 29, "三十": 30,
-		// 三十一到四十
-		"三十一": 31, "三十二": 32, "三十三": 33, "三十四": 34, "三十五": 35,
-		"三十六": 36, "三十七": 37, "三十八": 38, "三十九": 39, "四十": 40,
-		// 四十一到五十
-		"四十一": 41, "四十二": 42, "四十三": 43, "四十四": 44, "四十五": 45,
-		"四十六": 46, "四十七": 47, "四十八": 48, "四十九": 49, "五十": 50,
-		// 五十一到六十
-		"五十一": 51, "五十二": 52, "五十三": 53, "五十四": 54, "五十五": 55,
-		"五十六": 56, "五十七": 57, "五十八": 58, "五十九": 59, "六十": 60,
-		// 六十一到七十
-		"六十一": 61, "六十二": 62, "六十三": 63, "六十四": 64, "六十五": 65,
-		"六十六": 66, "六十七": 67, "六十八": 68, "六十九": 69, "七十": 70,
-		// 七十一到八十
-		"七十一": 71, "七十二": 72, "七十三": 73, "七十四": 74, "七十五": 75,
-		"七十六": 76, "七十七": 77, "七十八": 78, "七十九": 79, "八十": 80,
-		// 八十一到九十
-		"八十一": 81, "八十二": 82, "八十三": 83, "八十四": 84, "八十五": 85,
-		"八十六": 86, "八十七": 87, "八十八": 88, "八十九": 89, "九十": 90,
-		// 九十一到九十九
-		"九十一": 91, "九十二": 92, "九十三": 93, "九十四": 94, "九十五": 95,
-		"九十六": 96, "九十七": 97, "九十八": 98, "九十九": 99,
+	chineseNum = strings.TrimSpace(chineseNum)
+	if chineseNum == "" {
+		return 0
 	}
-	if num, exists := chineseToArabic[chineseNum]; exists {
-		return num
+
+	if value, err := strconv.Atoi(chineseNum); err == nil {
+		return value
 	}
-	return 0
+
+	digits := map[rune]int{
+		'零': 0, '〇': 0,
+		'一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5,
+		'六': 6, '七': 7, '八': 8, '九': 9,
+	}
+	units := map[rune]int{
+		'十': 10,
+		'百': 100,
+		'千': 1000,
+		'万': 10000,
+	}
+
+	total := 0
+	section := 0
+	number := 0
+	for _, char := range chineseNum {
+		if value, ok := digits[char]; ok {
+			number = value
+			continue
+		}
+		unit, ok := units[char]
+		if !ok {
+			return 0
+		}
+		if unit == 10000 {
+			if number == 0 && section == 0 {
+				section = 1
+			} else {
+				section += number
+			}
+			total += section * unit
+			section = 0
+			number = 0
+			continue
+		}
+		if number == 0 {
+			number = 1
+		}
+		section += number * unit
+		number = 0
+	}
+
+	return total + section + number
 }
 
 // output则参考input的结构生成目录结构，分出章节，每个章节内参考如下即可

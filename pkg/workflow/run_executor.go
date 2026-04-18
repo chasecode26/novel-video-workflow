@@ -2,9 +2,12 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"novel-video-workflow/pkg/database"
@@ -54,14 +57,18 @@ type Executor struct {
 	storage        Storage
 	eventPublisher EventPublisher
 	chapterLoader  ChapterLoader
+	baseDir        string
+	referenceAudio string
 }
 
 // NewExecutor creates a workflow executor.
-func NewExecutor(providers providers.ProviderBundle, storage Storage) *Executor {
+func NewExecutor(providers providers.ProviderBundle, storage Storage, baseDir string, referenceAudio string) *Executor {
 	return &Executor{
-		providers:     providers,
-		storage:       storage,
-		chapterLoader: &DBChapterLoader{},
+		providers:      providers,
+		storage:        storage,
+		chapterLoader:  &DBChapterLoader{},
+		baseDir:        strings.TrimSpace(baseDir),
+		referenceAudio: strings.TrimSpace(referenceAudio),
 	}
 }
 
@@ -180,17 +187,36 @@ func (e *Executor) executeTTS(ctx context.Context, run WorkflowRun) (ArtifactMet
 		return nil, fmt.Errorf("load chapter for TTS: %w", err)
 	}
 
+	project, err := e.chapterLoader.LoadProject(chapter.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("load project for TTS: %w", err)
+	}
+
+	workflowParams := parseWorkflowParams(chapter.WorkflowParams)
+	paths := e.buildChapterPaths(project, chapter, workflowParams)
+	chapterNumber := workflowChapterNumber(chapter)
+
 	req := providers.TTSRequest{
-		Text:      chapter.Content,
-		ProjectID: fmt.Sprintf("%d", chapter.ProjectID),
+		ProjectID:      strconv.FormatUint(uint64(project.ID), 10),
+		ChapterNumber:  chapterNumber,
+		Text:           chapter.Content,
+		ReferenceAudio: firstNonEmptyString(workflowString(workflowParams, "reference_audio"), workflowString(workflowParams, "tts.reference_audio"), e.referenceAudio),
+		OutputDir:      paths.AudioPath,
 	}
 	result, err := e.providers.TTS.Generate(req)
 	if err != nil {
 		return nil, err
 	}
 	return ArtifactMetadata{
-		"audio_path": result.AudioPath,
-		"duration":   result.Duration,
+		"chapter_dir":     paths.ChapterDir,
+		"audio_path":      result.AudioPath,
+		"duration":        result.Duration,
+		"reference_audio": req.ReferenceAudio,
+		"source_dir":      paths.SourceDir,
+		"chapter_number":  chapterNumber,
+		"project_id":      req.ProjectID,
+		"project_slug":    paths.ProjectSlug,
+		"workflow_params": cloneStringMap(workflowParams),
 	}, nil
 }
 
@@ -200,12 +226,24 @@ func (e *Executor) executeSubtitle(ctx context.Context, run WorkflowRun) (Artifa
 		return nil, fmt.Errorf("load chapter for subtitle: %w", err)
 	}
 
+	project, err := e.chapterLoader.LoadProject(chapter.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("load project for subtitle: %w", err)
+	}
+
+	workflowParams := parseWorkflowParams(chapter.WorkflowParams)
+	paths := e.buildChapterPaths(project, chapter, workflowParams)
+	chapterNumber := workflowChapterNumber(chapter)
+
 	ttsArtifact := run.Artifacts[StepTTS]
 	audioPath, _ := ttsArtifact["audio_path"].(string)
 
 	req := providers.SubtitleRequest{
-		AudioPath: audioPath,
-		Text:      chapter.Content,
+		ProjectID:     strconv.FormatUint(uint64(project.ID), 10),
+		ChapterNumber: chapterNumber,
+		AudioPath:     audioPath,
+		Text:          chapter.Content,
+		OutputPath:    paths.SubtitlePath,
 	}
 	result, err := e.providers.Subtitle.Generate(req)
 	if err != nil {
@@ -214,6 +252,8 @@ func (e *Executor) executeSubtitle(ctx context.Context, run WorkflowRun) (Artifa
 	return ArtifactMetadata{
 		"subtitle_path": result.SubtitlePath,
 		"format":        result.Format,
+		"chapter_dir":   paths.ChapterDir,
+		"audio_path":    audioPath,
 	}, nil
 }
 
@@ -228,13 +268,20 @@ func (e *Executor) executeImage(ctx context.Context, run WorkflowRun) (ArtifactM
 		return nil, fmt.Errorf("load project for image: %w", err)
 	}
 
+	workflowParams := parseWorkflowParams(chapter.WorkflowParams)
+	paths := e.buildChapterPaths(project, chapter, workflowParams)
 	prompt := chapter.Prompt
 	if prompt == "" {
 		prompt = project.GlobalPrompt
 	}
+	chapterNumber := workflowChapterNumber(chapter)
 
 	req := providers.ImageRequest{
-		Prompt: prompt,
+		ProjectID:     strconv.FormatUint(uint64(project.ID), 10),
+		ChapterNumber: chapterNumber,
+		Prompt:        prompt,
+		OutputDir:     paths.ImagesDir,
+		Count:         workflowImageCount(workflowParams),
 	}
 	result, err := e.providers.Image.Generate(req)
 	if err != nil {
@@ -242,6 +289,10 @@ func (e *Executor) executeImage(ctx context.Context, run WorkflowRun) (ArtifactM
 	}
 	return ArtifactMetadata{
 		"image_paths": result.ImagePaths,
+		"chapter_dir": paths.ChapterDir,
+		"prompt":      prompt,
+		"image_count": len(result.ImagePaths),
+		"images_dir":  paths.ImagesDir,
 	}, nil
 }
 
@@ -256,18 +307,227 @@ func (e *Executor) executeProject(ctx context.Context, run WorkflowRun) (Artifac
 		return nil, fmt.Errorf("load project for project step: %w", err)
 	}
 
-	chapterDir := filepath.Join("projects", project.Name, fmt.Sprintf("chapter_%d", chapter.ID))
+	workflowParams := parseWorkflowParams(chapter.WorkflowParams)
+	paths := e.buildChapterPaths(project, chapter, workflowParams)
+
+	ttsArtifact := run.Artifacts[StepTTS]
+	audioPath, _ := ttsArtifact["audio_path"].(string)
+	subtitleArtifact := run.Artifacts[StepSubtitle]
+	subtitlePath, _ := subtitleArtifact["subtitle_path"].(string)
+	imageArtifact := run.Artifacts[StepImage]
+	imagePaths := metadataStringSlice(imageArtifact["image_paths"])
 
 	req := providers.ProjectRequest{
-		ChapterDir: chapterDir,
+		ProjectID:    strconv.FormatUint(uint64(project.ID), 10),
+		ChapterDir:   paths.ChapterDir,
+		AudioPath:    audioPath,
+		SubtitlePath: subtitlePath,
+		ImagePaths:   imagePaths,
 	}
 	result, err := e.providers.Project.Generate(req)
 	if err != nil {
 		return nil, err
 	}
 	return ArtifactMetadata{
-		"project_path": result.ProjectPath,
+		"project_path":   result.ProjectPath,
+		"edit_list_path": result.EditListPath,
+		"chapter_dir":    paths.ChapterDir,
+		"audio_path":     audioPath,
+		"subtitle_path":  subtitlePath,
+		"image_paths":    imagePaths,
 	}, nil
+}
+
+type chapterPaths struct {
+	ProjectSlug  string
+	SourceDir    string
+	ChapterDir   string
+	AudioPath    string
+	SubtitlePath string
+	ImagesDir    string
+}
+
+func (e *Executor) buildChapterPaths(project *database.Project, chapter *database.Chapter, workflowParams map[string]interface{}) chapterPaths {
+	projectSlug := sanitizePathSegment(project.Name)
+	if projectSlug == "" {
+		projectSlug = strconv.FormatUint(uint64(project.ID), 10)
+	}
+
+	sourceDir := strings.TrimSpace(workflowString(workflowParams, "source_dir"))
+	chapterDirName := firstNonEmptyString(strings.TrimSpace(workflowString(workflowParams, "chapter_dir")), fmt.Sprintf("chapter_%02d", workflowChapterNumber(chapter)))
+	chapterDir := filepath.Join(e.baseOutputDir(), projectSlug, chapterDirName)
+
+	return chapterPaths{
+		ProjectSlug:  projectSlug,
+		SourceDir:    sourceDir,
+		ChapterDir:   chapterDir,
+		AudioPath:    filepath.Join(chapterDir, fmt.Sprintf("%s.wav", chapterDirName)),
+		SubtitlePath: filepath.Join(chapterDir, fmt.Sprintf("%s.srt", chapterDirName)),
+		ImagesDir:    chapterDir,
+	}
+}
+
+func (e *Executor) baseOutputDir() string {
+	if strings.TrimSpace(e.baseDir) == "" {
+		return filepath.Join("output")
+	}
+	return filepath.Join(e.baseDir, "output")
+}
+
+func workflowChapterNumber(chapter *database.Chapter) int {
+	if chapter == nil {
+		return 0
+	}
+	if chapter.ID > 0 {
+		return int(chapter.ID)
+	}
+	return 0
+}
+
+func parseWorkflowParams(raw string) map[string]interface{} {
+	params := map[string]interface{}{}
+	if strings.TrimSpace(raw) == "" {
+		return params
+	}
+	if err := json.Unmarshal([]byte(raw), &params); err != nil {
+		return map[string]interface{}{}
+	}
+	return params
+}
+
+func workflowImageCount(params map[string]interface{}) int {
+	candidates := []string{"image_count", "generated_image_count", "max_images", "image.count", "image.max_images"}
+	for _, key := range candidates {
+		if value, ok := workflowInt(params, key); ok && value > 0 {
+			return value
+		}
+	}
+	return 1
+}
+
+func workflowString(params map[string]interface{}, key string) string {
+	if len(params) == 0 {
+		return ""
+	}
+	segments := strings.Split(key, ".")
+	current := params
+	for index, segment := range segments {
+		value, ok := current[segment]
+		if !ok {
+			return ""
+		}
+		if index == len(segments)-1 {
+			switch typed := value.(type) {
+			case string:
+				return strings.TrimSpace(typed)
+			case fmt.Stringer:
+				return strings.TrimSpace(typed.String())
+			default:
+				return strings.TrimSpace(fmt.Sprint(value))
+			}
+		}
+		next, ok := value.(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		current = next
+	}
+	return ""
+}
+
+func workflowInt(params map[string]interface{}, key string) (int, bool) {
+	if len(params) == 0 {
+		return 0, false
+	}
+	segments := strings.Split(key, ".")
+	current := params
+	for index, segment := range segments {
+		value, ok := current[segment]
+		if !ok {
+			return 0, false
+		}
+		if index == len(segments)-1 {
+			switch typed := value.(type) {
+			case int:
+				return typed, true
+			case int32:
+				return int(typed), true
+			case int64:
+				return int(typed), true
+			case float64:
+				return int(typed), true
+			case json.Number:
+				number, err := typed.Int64()
+				return int(number), err == nil
+			case string:
+				number, err := strconv.Atoi(strings.TrimSpace(typed))
+				return number, err == nil
+			default:
+				return 0, false
+			}
+		}
+		next, ok := value.(map[string]interface{})
+		if !ok {
+			return 0, false
+		}
+		current = next
+	}
+	return 0, false
+}
+
+func metadataStringSlice(value interface{}) []string {
+	switch typed := value.(type) {
+	case []string:
+		return append([]string(nil), typed...)
+	case []interface{}:
+		items := make([]string, 0, len(typed))
+		for _, item := range typed {
+			items = append(items, strings.TrimSpace(fmt.Sprint(item)))
+		}
+		return items
+	default:
+		return nil
+	}
+}
+
+func cloneStringMap(input map[string]interface{}) map[string]interface{} {
+	if input == nil {
+		return map[string]interface{}{}
+	}
+	cloned := make(map[string]interface{}, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func sanitizePathSegment(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer(
+		"\\", "_",
+		"/", "_",
+		":", "_",
+		"*", "_",
+		"?", "_",
+		"\"", "_",
+		"<", "_",
+		">", "_",
+		"|", "_",
+		" ", "_",
+	)
+	return replacer.Replace(trimmed)
 }
 
 func categorizeError(err error) string {

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	configpkg "novel-video-workflow/pkg/config"
+	"novel-video-workflow/pkg/tools/aegisub"
 )
 
 type windowsSubtitleGenerateFunc func(audioPath, text, outputPath string) error
@@ -23,7 +24,10 @@ func NewWindowsSubtitleProvider(baseDir string, cfg configpkg.SubtitleConfig) Wi
 		baseDir: baseDir,
 		config:  cfg,
 	}
-	provider.generateFunc = provider.generateWithAegisub
+	integration := aegisub.NewAegisubIntegration()
+	provider.generateFunc = func(audioPath, text, outputPath string) error {
+		return integration.ProcessIndextts2OutputWithCustomName(audioPath, text, outputPath)
+	}
 	return provider
 }
 
@@ -59,7 +63,8 @@ func (p WindowsSubtitleProvider) Generate(req SubtitleRequest) (SubtitleResult, 
 }
 
 func (p WindowsSubtitleProvider) generateWithAegisub(audioPath, text, outputPath string) error {
-	return writeWindowsSubtitleSRT(outputPath, text)
+	integration := aegisub.NewAegisubIntegration()
+	return integration.ProcessIndextts2OutputWithCustomName(audioPath, text, outputPath)
 }
 
 func writeWindowsSubtitleSRT(outputPath, text string) error {

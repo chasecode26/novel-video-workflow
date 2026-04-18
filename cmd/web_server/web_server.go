@@ -10,13 +10,13 @@ import (
 	"net/http"
 	"net/url"
 	"novel-video-workflow/pkg/broadcast"
-	"novel-video-workflow/pkg/capcut"
 	configpkg "novel-video-workflow/pkg/config"
 	"novel-video-workflow/pkg/database"
 	"novel-video-workflow/pkg/healthcheck"
 	mcp_pkg "novel-video-workflow/pkg/mcp"
 	"novel-video-workflow/pkg/providers"
 	"novel-video-workflow/pkg/tools/aegisub"
+	"novel-video-workflow/pkg/tools/comfyui"
 	"novel-video-workflow/pkg/tools/drawthings"
 	"novel-video-workflow/pkg/tools/file"
 	"novel-video-workflow/pkg/tools/indextts2"
@@ -37,6 +37,7 @@ import (
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"gopkg.in/yaml.v3"
 )
 
 var upgrader = websocket.Upgrader{
@@ -84,11 +85,78 @@ func loadAppComponents(configPath string) (configpkg.Config, providers.ProviderB
 	return cfg, bundle, processor, nil
 }
 
-func buildWorkflowAPIs(bundle providers.ProviderBundle) (*api_pkg.SystemCheckAPI, *api_pkg.WorkflowRunAPI) {
+func buildWorkflowAPIs(cfg configpkg.Config, bundle providers.ProviderBundle) (*api_pkg.SystemCheckAPI, *api_pkg.WorkflowRunAPI) {
+	if err := database.InitDB(cfg.Database.Path); err != nil {
+		log.Printf("初始化 workflow run 数据库失败: %v", err)
+		return nil, nil
+	}
+
 	runStorage := workflow_pkg.NewRunStorage(database.DB)
-	runExecutor := workflow_pkg.NewExecutor(bundle, runStorage)
+	runExecutor := workflow_pkg.NewExecutor(bundle, runStorage, cfg.Paths.BaseDir, cfg.Paths.ReferenceAudio)
 	runExecutor.SetEventPublisher(&api_pkg.BroadcastEventPublisher{})
 	return api_pkg.NewSystemCheckAPI(bundle), api_pkg.NewWorkflowRunAPI(runExecutor, runStorage)
+}
+
+func registerWorkflowRoutes(r *gin.Engine, cfg configpkg.Config, bundle providers.ProviderBundle) bool {
+	systemCheckAPI, workflowRunAPI := buildWorkflowAPIs(cfg, bundle)
+	if systemCheckAPI == nil || workflowRunAPI == nil {
+		registerUnavailableWorkflowRoutes(r)
+		return false
+	}
+
+	systemCheckAPI.RegisterRoutes(r)
+	workflowRunAPI.RegisterRoutes(r)
+	return true
+}
+
+func registerWorkflowSupportRoutes(r *gin.Engine) {
+	configPath := mustResolveConfigPath()
+	if strings.TrimSpace(configPath) == "" {
+		log.Printf("加载 workflow 依赖失败: 配置文件路径不可用")
+		registerWorkflowSupportUnavailableRoutes(r)
+		registerUnavailableWorkflowRoutes(r)
+		return
+	}
+
+	cfg, bundle, processor, err := loadAppComponents(configPath)
+	if err != nil {
+		log.Printf("加载 workflow 依赖失败: %v", err)
+		registerWorkflowSupportUnavailableRoutes(r)
+		cfgOnly, cfgErr := configpkg.LoadConfig(configPath)
+		if cfgErr == nil {
+			if bundleOnly, bundleErr := providers.BuildProviders(cfgOnly); bundleErr == nil {
+				registerWorkflowRoutes(r, cfgOnly, bundleOnly)
+				return
+			}
+		}
+		registerUnavailableWorkflowRoutes(r)
+		return
+	}
+
+	registerWorkflowRoutes(r, cfg, bundle)
+
+	promptTemplateAPI := api_pkg.NewPromptTemplateAPI(processor)
+	r.GET("/api/prompt-templates", promptTemplateAPI.GetPromptTemplates)
+	r.GET("/api/prompt-templates/:id", promptTemplateAPI.GetPromptTemplateByID)
+	r.GET("/api/prompt-templates/category/:category", promptTemplateAPI.GetPromptTemplatesByCategory)
+	r.POST("/api/prompt-templates", promptTemplateAPI.CreatePromptTemplate)
+	r.PUT("/api/prompt-templates/:id", promptTemplateAPI.UpdatePromptTemplate)
+	r.DELETE("/api/prompt-templates/:id", promptTemplateAPI.DeletePromptTemplate)
+
+	workflowTrackingAPI := api_pkg.NewWorkflowTrackingAPI(processor)
+	r.POST("/api/workflow/chapter/record-params", workflowTrackingAPI.RecordChapterWorkflowParams)
+	r.GET("/api/workflow/chapter/:id/params", workflowTrackingAPI.GetChapterWorkflowParams)
+	r.POST("/api/workflow/scene/record-params", workflowTrackingAPI.RecordSceneWorkflowParams)
+	r.GET("/api/workflow/scene/:id/params", workflowTrackingAPI.GetSceneWorkflowParams)
+	r.GET("/api/chapter/:id/scenes", workflowTrackingAPI.GetScenesByChapter)
+}
+
+func mustResolveConfigPath() string {
+	configPath, err := resolveConfigPath()
+	if err != nil {
+		return ""
+	}
+	return configPath
 }
 
 func registerProcessorBackedRoutes(r *gin.Engine) bool {
@@ -119,14 +187,23 @@ func registerProcessorBackedRoutes(r *gin.Engine) bool {
 	r.POST("/api/workflow/scene/record-params", workflowTrackingAPI.RecordSceneWorkflowParams)
 	r.GET("/api/workflow/scene/:id/params", workflowTrackingAPI.GetSceneWorkflowParams)
 	r.GET("/api/chapter/:id/scenes", workflowTrackingAPI.GetScenesByChapter)
-
-	systemCheckAPI, workflowRunAPI := buildWorkflowAPIs(processor.GetProviders())
-	systemCheckAPI.RegisterRoutes(r)
-	workflowRunAPI.RegisterRoutes(r)
 	return true
 }
 
-func registerUnavailableProcessorRoutes(r *gin.Engine) {
+func registerUnavailableWorkflowRoutes(r *gin.Engine) {
+	unavailable := func(c *gin.Context) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"status":  "error",
+			"message": "workflow services unavailable",
+		})
+	}
+
+	r.GET("/api/system/check", unavailable)
+	r.POST("/api/workflow/runs", unavailable)
+	r.GET("/api/workflow/runs/:id", unavailable)
+}
+
+func registerWorkflowSupportUnavailableRoutes(r *gin.Engine) {
 	unavailable := func(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status":  "error",
@@ -146,10 +223,10 @@ func registerUnavailableProcessorRoutes(r *gin.Engine) {
 	r.POST("/api/workflow/scene/record-params", unavailable)
 	r.GET("/api/workflow/scene/:id/params", unavailable)
 	r.GET("/api/chapter/:id/scenes", unavailable)
+}
 
-	r.GET("/api/system/check", unavailable)
-	r.POST("/api/workflow/runs", unavailable)
-	r.GET("/api/workflow/runs/:id", unavailable)
+func registerUnavailableProcessorRoutes(r *gin.Engine) {
+	registerWorkflowSupportUnavailableRoutes(r)
 }
 
 func isAllowedProjectPath(cleanPath, projectRoot string) bool {
@@ -228,7 +305,7 @@ func startMCPServer() error {
 	return nil
 }
 
-func loadToolsList() {
+func initializeMCPServer() {
 	// 启动MCP服务器
 	if err := startMCPServer(); err != nil {
 		log.Printf("启动MCP服务器失败: %v", err)
@@ -257,6 +334,74 @@ func resolveConfigPath() (string, error) {
 		return "", err
 	}
 	return configPath, nil
+}
+
+func loadWebConfig() (configpkg.Config, error) {
+	configPath, err := resolveConfigPath()
+	if err != nil {
+		return configpkg.Config{}, err
+	}
+	return configpkg.LoadConfig(configPath)
+}
+
+func ensureConfigMap(root map[string]interface{}, key string) map[string]interface{} {
+	if existing, ok := root[key].(map[string]interface{}); ok {
+		return existing
+	}
+	child := map[string]interface{}{}
+	root[key] = child
+	return child
+}
+
+func updateConfigFile(mutator func(map[string]interface{}) error) error {
+	configPath, err := resolveConfigPath()
+	if err != nil {
+		return err
+	}
+
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+
+	cfgMap := map[string]interface{}{}
+	if len(raw) > 0 {
+		if err := yaml.Unmarshal(raw, &cfgMap); err != nil {
+			return err
+		}
+	}
+
+	if err := mutator(cfgMap); err != nil {
+		return err
+	}
+
+	out, err := yaml.Marshal(cfgMap)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(configPath, out, 0o644)
+}
+
+func intFromSetting(value interface{}) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int32:
+		return int(v), true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	case json.Number:
+		n, err := v.Int64()
+		return int(n), err == nil
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		return n, err == nil
+	default:
+		return 0, false
+	}
 }
 
 // fallbackToolList 提供备用工具列表
@@ -416,477 +561,207 @@ func wsEndpoint(c *gin.Context) {
 	log.Printf("WebSocket connection fully closed and cleaned up")
 }
 
-func apiToolsHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, mcpTools)
-}
-
-func apiExecuteHandler(c *gin.Context) {
-	var reqBody map[string]interface{} // 修改为interface{}以支持不同类型参数
-	err := json.NewDecoder(c.Request.Body).Decode(&reqBody)
+func resolveProjectRoot() (string, error) {
+	wd, err := os.Getwd()
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
-		return
+		return "", err
 	}
 
-	toolName, ok := reqBody["toolName"].(string)
-	if !ok || toolName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing toolName"})
-		return
+	if strings.HasSuffix(wd, filepath.Join("cmd", "web_server")) {
+		return filepath.Dir(filepath.Dir(wd)), nil
 	}
 
-	// 启动MCP工具执行
-	go func() {
-		// 检查工具是否存在
-		toolExists := false
-		for _, tool := range mcpTools {
-			if tool.Name == toolName {
-				toolExists = true
-				break
-			}
-		}
-
-		if !toolExists {
-			return
-		}
-		// 对于generate_indextts2_audio工具，处理文本输入和音频生成
-		if toolName == "generate_indextts2_audio" {
-			text, ok := reqBody["text"].(string)
-			if !ok || text == "" {
-				text = "这是一个默认的测试文本。" // 默认文本
-			}
-
-			referenceAudio, ok := reqBody["reference_audio"].(string)
-			if !ok || referenceAudio == "" {
-				referenceAudio = "./assets/ref_audio/ref.m4a" // 默认参考音频
-			}
-
-			outputFile, ok := reqBody["output_file"].(string)
-			if !ok || outputFile == "" {
-				outputFile = fmt.Sprintf("./output/audio_%d.wav", time.Now().Unix()) // 默认输出文件
-			}
-
-			// 确保输出目录存在
-			outputDir := filepath.Dir(outputFile)
-			if err := os.MkdirAll(outputDir, 0755); err != nil {
-				broadcast.GlobalBroadcastService.SendLog("indextts2", fmt.Sprintf("[%s] 创建输出目录失败: %v", toolName, err), broadcast.GetTimeStr())
-				return
-			}
-
-			// 检查参考音频是否存在
-			if _, err := os.Stat(referenceAudio); os.IsNotExist(err) {
-				// 尝试其他可能的默认路径
-				possiblePaths := []string{
-					"./ref.m4a",
-					"./音色.m4a",
-					"./assets/ref_audio/ref.m4a",
-					"./assets/ref_audio/音色.m4a",
-				}
-
-				found := false
-				for _, path := range possiblePaths {
-					if _, err := os.Stat(path); err == nil {
-						referenceAudio = path
-						found = true
-						break
-					}
-				}
-
-				if !found {
-					broadcast.GlobalBroadcastService.SendLog("indextts2", fmt.Sprintf("[%s] 找不到参考音频文件，请确保存在默认音频文件", toolName), broadcast.GetTimeStr())
-
-					return
-				}
-			}
-			broadcast.GlobalBroadcastService.SendLog("indextts2", fmt.Sprintf("[%s] 使用参考音频: %s", toolName, referenceAudio), broadcast.GetTimeStr())
-			broadcast.GlobalBroadcastService.SendLog("indextts2", fmt.Sprintf("[%s] 输入文本: %s", toolName, text), broadcast.GetTimeStr())
-
-			// 检查MCP服务器实例是否存在
-			if mcpServerInstance != nil {
-				// 获取处理器并直接调用工具
-				handler := mcpServerInstance.GetHandler()
-				if handler != nil {
-					// 创建MockRequest对象
-					mockRequest := &mcp_pkg.MockRequest{
-						Params: map[string]interface{}{
-							"text":            text,
-							"reference_audio": referenceAudio,
-							"output_file":     outputFile,
-						},
-					}
-
-					// 调用特定工具处理函数
-					result, err := handler.HandleGenerateIndextts2AudioDirect(mockRequest)
-					if err != nil {
-						return
-					}
-
-					// 检查结果
-					if success, ok := result["success"].(bool); ok && success {
-					} else {
-						errorMsg := "未知错误"
-						if result["error"] != nil {
-							if errStr, ok := result["error"].(string); ok {
-								errorMsg = errStr
-							}
-						}
-						broadcast.GlobalBroadcastService.SendLog("indextts2", fmt.Sprintf("[%s] 工具执行失败: %s", toolName, errorMsg), broadcast.GetTimeStr())
-
-					}
-				} else {
-					broadcast.GlobalBroadcastService.SendLog("indextts2", fmt.Sprintf("[%s] 错误: MCP处理器未初始化", toolName), broadcast.GetTimeStr())
-
-				}
-			} else {
-				// 如果没有MCP服务器实例，给出提示
-				broadcast.GlobalBroadcastService.SendLog("indextts2", fmt.Sprintf("[%s] 错误: MCP服务器未启动。请确保服务已正确初始化。", toolName), broadcast.GetTimeStr())
-			}
-		} else {
-			// 其他工具的处理 - 也需要类似处理
-			if mcpServerInstance != nil {
-				// 获取处理器并直接调用工具
-				handler := mcpServerInstance.GetHandler()
-				if handler != nil {
-					// 根据工具名称调用相应的处理函数
-					var result map[string]interface{}
-					var err error
-
-					// 为其他工具传递参数
-					params := extractToolParams(reqBody)
-
-					// 这里需要根据工具名称调用相应的处理函数
-					switch toolName {
-					case "generate_subtitles_from_indextts2":
-						mockRequest := &mcp_pkg.MockRequest{Params: params}
-						result, err = handler.HandleGenerateSubtitlesFromIndextts2Direct(mockRequest)
-					case "file_split_novel_into_chapters":
-						mockRequest := &mcp_pkg.MockRequest{Params: params}
-						result, err = handler.HandleFileSplitNovelIntoChaptersDirect(mockRequest)
-					case "generate_image_from_text":
-						mockRequest := &mcp_pkg.MockRequest{Params: params}
-						result, err = handler.HandleGenerateImageFromTextDirect(mockRequest)
-					case "generate_image_from_image":
-						mockRequest := &mcp_pkg.MockRequest{Params: params}
-						result, err = handler.HandleGenerateImageFromImageDirect(mockRequest)
-					case "generate_images_from_chapter_with_ai_prompt":
-						// 处理章节图像生成（使用AI提示词）
-						chapterText, ok := reqBody["chapter_text"].(string)
-						if !ok {
-							chapterText = "这是一个默认的章节文本。"
-						}
-
-						outputDir, ok := reqBody["output_dir"].(string)
-						if !ok {
-							outputDir = fmt.Sprintf("./output/chapter_images_%d", time.Now().Unix())
-						}
-
-						widthFloat, ok := reqBody["width"].(float64)
-						var width int
-						if ok {
-							width = int(widthFloat)
-						} else {
-							width = 512 // 默认宽度
-						}
-
-						heightFloat, ok := reqBody["height"].(float64)
-						var height int
-						if ok {
-							height = int(heightFloat)
-						} else {
-							height = 896 // 默认高度
-						}
-
-						// 确保输出目录存在
-						if err := os.MkdirAll(outputDir, 0755); err != nil {
-							return
-						}
-
-						// 创建一个自定义的日志记录器，将内部日志广播到前端
-						logger, _ := zap.NewProduction()
-						defer logger.Sync()
-
-						// 使用自定义的广播日志适配器
-						encoder := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
-						writeSyncer := zapcore.AddSync(os.Stdout) // 输出到标准输出，同时也会被广播
-						broadcastLogger := NewBroadcastLoggerAdapter(toolName, encoder, writeSyncer)
-						broadcaster := zap.New(broadcastLogger)
-
-						// 使用带广播功能的日志记录器创建章节图像生成器，使用当前全局样式
-						generator := drawthings.NewChapterImageGeneratorWithStyle(broadcaster, database.DB, GlobalStyle)
-
-						// 直接调用图像生成方法，而不是通过MCP处理器
-						results, err := generator.GenerateImagesFromChapter(chapterText, outputDir, width, height, false)
-						if err != nil {
-							return
-						}
-
-						// 准备结果
-						imageFiles := make([]string, len(results))
-						paragraphs := make([]string, len(results))
-						prompts := make([]string, len(results))
-
-						for i, result := range results {
-							imageFiles[i] = result.ImageFile
-							paragraphs[i] = result.ParagraphText
-							prompts[i] = result.ImagePrompt
-						}
-
-						result = map[string]interface{}{
-							"success":               true,
-							"output_dir":            outputDir,
-							"chapter_text_length":   len(chapterText),
-							"generated_image_count": len(results),
-							"image_files":           imageFiles,
-							"paragraphs":            paragraphs,
-							"prompts":               prompts,
-							"width":                 width,
-							"height":                height,
-							"is_suspense":           true,
-							"tool":                  "drawthings_chapter_txt2img_with_ai_prompt",
-						}
-					case "generate_image_from_lyric_ai_prompt":
-						// 处理歌词MV图像生成
-						lyricText, ok := reqBody["lyric_text"].(string)
-						if !ok || lyricText == "" {
-							lyricText = "这是一首美丽的歌曲\n旋律悠扬动听\n歌词深情动人" // 默认歌词
-						}
-
-						outputDir, ok := reqBody["output_dir"].(string)
-						if !ok || outputDir == "" {
-							outputDir = fmt.Sprintf("./output/lyric_mv_%d", time.Now().Unix())
-						}
-
-						widthFloat, ok := reqBody["width"].(float64)
-						var width int
-						if ok {
-							width = int(widthFloat)
-						} else {
-							width = 512 // 默认宽度
-						}
-
-						heightFloat, ok := reqBody["height"].(float64)
-						var height int
-						if ok {
-							height = int(heightFloat)
-						} else {
-							height = 896 // 默认高度
-						}
-
-						// 确保输出目录存在
-						if err := os.MkdirAll(outputDir, 0755); err != nil {
-							broadcast.GlobalBroadcastService.SendLog("lyric", fmt.Sprintf("[%s] 创建输出目录失败: %v", toolName, err), broadcast.GetTimeStr())
-							return
-						}
-
-						broadcast.GlobalBroadcastService.SendLog("lyric", fmt.Sprintf("[%s] 开始生成歌词MV图像", toolName), broadcast.GetTimeStr())
-						broadcast.GlobalBroadcastService.SendLog("lyric", fmt.Sprintf("[%s] 歌词长度: %d 字符", toolName, len(lyricText)), broadcast.GetTimeStr())
-						broadcast.GlobalBroadcastService.SendLog("lyric", fmt.Sprintf("[%s] 输出目录: %s", toolName, outputDir), broadcast.GetTimeStr())
-
-						// 创建一个自定义的日志记录器，将内部日志广播到前端
-						logger, _ := zap.NewProduction()
-						defer logger.Sync()
-
-						// 使用自定义的广播日志适配器
-						encoder := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
-						writeSyncer := zapcore.AddSync(os.Stdout) // 输出到标准输出，同时也会被广播
-						broadcastLogger := NewBroadcastLoggerAdapter(toolName, encoder, writeSyncer)
-						broadcaster := zap.New(broadcastLogger)
-
-						// 使用带广播功能的日志记录器创建章节图像生成器，使用歌词MV风格
-						generator := drawthings.NewChapterImageGeneratorWithStyle(broadcaster, database.DB, "音乐视频艺术风格")
-
-						// 直接调用歌词图像生成方法
-						results, err := generator.GenerateImagesFromLyric(lyricText, outputDir, width, height)
-						if err != nil {
-							broadcast.GlobalBroadcastService.SendLog("lyric", fmt.Sprintf("[%s] 歌词图像生成失败: %v", toolName, err), broadcast.GetTimeStr())
-							return
-						}
-
-						// 准备结果
-						imageFiles := make([]string, len(results))
-						lyrics := make([]string, len(results))
-						prompts := make([]string, len(results))
-
-						for i, result := range results {
-							imageFiles[i] = result.ImageFile
-							lyrics[i] = result.ParagraphText
-							prompts[i] = result.ImagePrompt
-						}
-
-						result = map[string]interface{}{
-							"success":               true,
-							"output_dir":            outputDir,
-							"lyric_text_length":     len(lyricText),
-							"generated_image_count": len(results),
-							"image_files":           imageFiles,
-							"lyrics":                lyrics,
-							"prompts":               prompts,
-							"width":                 width,
-							"height":                height,
-							"tool":                  "drawthings_lyric_mv_generator",
-						}
-
-						broadcast.GlobalBroadcastService.SendLog("lyric", fmt.Sprintf("[%s] 歌词MV图像生成完成，共生成 %d 张图像", toolName, len(results)), broadcast.GetTimeStr())
-
-					default:
-						return
-					}
-
-					if err != nil {
-						return
-					}
-
-					// 记录执行结果
-					broadcast.GlobalBroadcastService.SendLog("indextts2", fmt.Sprintf("[%s] 工具执行完成，结果: %+v", toolName, result), broadcast.GetTimeStr())
-				} else {
-				}
-			} else {
-			}
-		}
-
-	}()
-
-	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "Tool execution started"})
+	return wd, nil
 }
 
-func apiExecuteAllHandler(c *gin.Context) {
-	// 执行所有MCP工具
-	go func() {
-		for _, tool := range mcpTools {
+func syncUploadedContent(projectRoot string) (int, int, error) {
+	inputDir := filepath.Join(projectRoot, "input")
+	if err := os.MkdirAll(inputDir, 0o755); err != nil {
+		return 0, 0, err
+	}
 
-			// 检查MCP服务器实例是否存在
-			if mcpServerInstance != nil {
-				// 获取处理器并直接调用工具
-				handler := mcpServerInstance.GetHandler()
-				if handler != nil {
-					// 根据工具名称调用相应的处理函数
-					var result map[string]interface{}
-					var err error
+	entries, err := os.ReadDir(inputDir)
+	if err != nil {
+		return 0, 0, err
+	}
 
-					// 为工具传递默认参数
-					params := make(map[string]interface{})
+	projectCount := 0
+	chapterCount := 0
+	for _, entry := range entries {
+		var imported int
 
-					// 这里需要根据工具名称调用相应的处理函数
-					switch tool.Name {
-					case "generate_subtitles_from_indextts2":
-						mockRequest := &mcp_pkg.MockRequest{Params: params}
-						result, err = handler.HandleGenerateSubtitlesFromIndextts2Direct(mockRequest)
-					case "file_split_novel_into_chapters":
-						mockRequest := &mcp_pkg.MockRequest{Params: params}
-						result, err = handler.HandleFileSplitNovelIntoChaptersDirect(mockRequest)
-					case "generate_image_from_text":
-						mockRequest := &mcp_pkg.MockRequest{Params: params}
-						result, err = handler.HandleGenerateImageFromTextDirect(mockRequest)
-					case "generate_image_from_image":
-						mockRequest := &mcp_pkg.MockRequest{Params: params}
-						result, err = handler.HandleGenerateImageFromImageDirect(mockRequest)
-					case "generate_indextts2_audio":
-						// 对于音频生成工具，使用默认参数
-						defaultParams := map[string]interface{}{
-							"text":            "这是一个测试音频。",
-							"reference_audio": "./assets/ref_audio/ref.m4a",
-							"output_file":     fmt.Sprintf("./output/test_%d.wav", time.Now().Unix()),
-						}
-						mockRequest := &mcp_pkg.MockRequest{Params: defaultParams}
-						result, err = handler.HandleGenerateIndextts2AudioDirect(mockRequest)
-					default:
-						continue
-					}
-
-					if err != nil {
-						broadcast.GlobalBroadcastService.SendLog("indextts2", err.Error(), broadcast.GetTimeStr())
-
-						continue
-					}
-					//map转 json
-					jsonData, _ := json.Marshal(result)
-					broadcast.GlobalBroadcastService.SendLog("indextts2", string(jsonData), broadcast.GetTimeStr())
-
-					// 记录执行结果
-				} else {
-				}
-
-			} else {
-				// 如果没有MCP服务器实例，给出提示
-				broadcast.GlobalBroadcastService.SendLog("indextts2", "[提示] 请先启动MCP服务器！", broadcast.GetTimeStr())
-			}
-
+		switch {
+		case entry.IsDir():
+			imported, err = syncProjectDirectory(filepath.Join(inputDir, entry.Name()), entry.Name())
+		case strings.EqualFold(filepath.Ext(entry.Name()), ".txt"):
+			projectName := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+			imported, err = syncStandaloneNovelFile(filepath.Join(inputDir, entry.Name()), projectName)
+		default:
+			continue
 		}
-	}()
 
-	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "All tools execution started"})
+		if err != nil {
+			return projectCount, chapterCount, err
+		}
+		if imported > 0 {
+			projectCount++
+			chapterCount += imported
+		}
+	}
+
+	return projectCount, chapterCount, nil
 }
 
-func apiProcessFolderHandler(c *gin.Context) {
-	// 处理上传的文件夹
-	go func() {
-		broadcast.GlobalBroadcastService.SendLog("上传文件夹", "[工作流] 开始文件夹处理工作流...", broadcast.GetTimeStr())
+func syncStandaloneNovelFile(novelPath, projectName string) (int, error) {
+	fm := file.NewFileManager()
+	if _, err := fm.CreateInputChapterStructure(novelPath); err != nil {
+		return 0, err
+	}
 
-		// 检查MCP服务器实例是否存在
-		if mcpServerInstance != nil {
-			// 获取处理器并直接调用工具
-			handler := mcpServerInstance.GetHandler()
-			if handler != nil {
-				// 模拟工作流处理
-				for _, tool := range mcpTools {
-					broadcast.GlobalBroadcastService.SendLog("上传文件夹", fmt.Sprintf("[%s] 使用 %s 处理...", tool.Name, tool.Name), broadcast.GetTimeStr())
+	return importChapterDirectories(filepath.Dir(novelPath), projectName)
+}
 
-					// 根据工具名称调用相应的处理函数
-					var result map[string]interface{}
-					var err error
-
-					// 为工具传递默认参数
-					params := make(map[string]interface{})
-
-					// 这里需要根据工具名称调用相应的处理函数
-					switch tool.Name {
-					case "generate_subtitles_from_indextts2":
-						mockRequest := &mcp_pkg.MockRequest{Params: params}
-						result, err = handler.HandleGenerateSubtitlesFromIndextts2Direct(mockRequest)
-					case "file_split_novel_into_chapters":
-						mockRequest := &mcp_pkg.MockRequest{Params: params}
-						result, err = handler.HandleFileSplitNovelIntoChaptersDirect(mockRequest)
-					case "generate_image_from_text":
-						mockRequest := &mcp_pkg.MockRequest{Params: params}
-						result, err = handler.HandleGenerateImageFromTextDirect(mockRequest)
-					case "generate_image_from_image":
-						mockRequest := &mcp_pkg.MockRequest{Params: params}
-						result, err = handler.HandleGenerateImageFromImageDirect(mockRequest)
-					case "generate_indextts2_audio":
-						// 对于音频生成工具，使用默认参数
-						defaultParams := map[string]interface{}{
-							"text":            "这是文件夹处理的一部分。",
-							"reference_audio": "./assets/ref_audio/ref.m4a",
-							"output_file":     fmt.Sprintf("./output/folder_process_%d.wav", time.Now().Unix()),
-						}
-						mockRequest := &mcp_pkg.MockRequest{Params: defaultParams}
-						result, err = handler.HandleGenerateIndextts2AudioDirect(mockRequest)
-					default:
-						broadcast.GlobalBroadcastService.SendLog("上传文件夹", fmt.Sprintf("[%s] 暂不支持直接调用工具: %s", tool.Name, tool.Name), broadcast.GetTimeStr())
-
-						continue
-					}
-
-					if err != nil {
-						broadcast.GlobalBroadcastService.SendLog("上传文件夹", fmt.Sprintf("[%s] 工具执行失败: %v", tool.Name, err), broadcast.GetTimeStr())
-
-					} else {
-						// 记录执行结果
-						broadcast.GlobalBroadcastService.SendLog("上传完毕", fmt.Sprintf("[%s] 工具执行完成，结果: %+v", tool.Name, result), broadcast.GetTimeStr())
-
-					}
-				}
-			} else {
-				broadcast.GlobalBroadcastService.SendLog("[工作流] 错误", "MCP处理器未初始化", broadcast.GetTimeStr())
-
-			}
-		} else {
-			broadcast.GlobalBroadcastService.SendLog("[工作流] 错误", "MCP服务器未启动。请确保服务已正确初始化", broadcast.GetTimeStr())
+func syncProjectDirectory(projectDir, projectName string) (int, error) {
+	chapterDirs, err := findChapterDirectories(projectDir)
+	if err != nil {
+		return 0, err
+	}
+	if len(chapterDirs) == 0 {
+		novelPath, err := selectNovelFile(projectDir, projectName)
+		if err != nil {
+			return 0, err
 		}
-		broadcast.GlobalBroadcastService.SendLog("处理完成", "[工作流] 文件夹处理完成", broadcast.GetTimeStr())
+		if novelPath == "" {
+			return 0, nil
+		}
 
-	}()
+		fm := file.NewFileManager()
+		if _, err := fm.CreateInputChapterStructure(novelPath); err != nil {
+			return 0, err
+		}
+	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "Folder processing started"})
+	return importChapterDirectories(projectDir, projectName)
+}
+
+func selectNovelFile(projectDir, projectName string) (string, error) {
+	entries, err := os.ReadDir(projectDir)
+	if err != nil {
+		return "", err
+	}
+
+	expectedName := projectName + ".txt"
+	var firstTxt string
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".txt") {
+			continue
+		}
+
+		candidate := filepath.Join(projectDir, entry.Name())
+		if strings.EqualFold(entry.Name(), expectedName) {
+			return candidate, nil
+		}
+		if firstTxt == "" {
+			firstTxt = candidate
+		}
+	}
+
+	return firstTxt, nil
+}
+
+func findChapterDirectories(projectDir string) ([]string, error) {
+	entries, err := os.ReadDir(projectDir)
+	if err != nil {
+		return nil, err
+	}
+
+	dirs := make([]string, 0)
+	for _, entry := range entries {
+		if entry.IsDir() && isChapterDirectory(entry.Name()) {
+			dirs = append(dirs, filepath.Join(projectDir, entry.Name()))
+		}
+	}
+
+	return dirs, nil
+}
+
+func importChapterDirectories(projectDir, projectName string) (int, error) {
+	project, err := ensureProjectRecord(projectName)
+	if err != nil {
+		return 0, err
+	}
+
+	entries, err := os.ReadDir(projectDir)
+	if err != nil {
+		return 0, err
+	}
+
+	imported := 0
+	for _, entry := range entries {
+		if !entry.IsDir() || !isChapterDirectory(entry.Name()) {
+			continue
+		}
+
+		if err := upsertChapterRecord(project.ID, filepath.Join(projectDir, entry.Name()), entry.Name()); err != nil {
+			return imported, err
+		}
+		imported++
+	}
+
+	return imported, nil
+}
+
+func ensureProjectRecord(projectName string) (*database.Project, error) {
+	project, err := database.GetProjectByName(projectName)
+	if err == nil {
+		return project, nil
+	}
+
+	return database.CreateProject(projectName, "uploaded from input folder", "", "secret")
+}
+
+func upsertChapterRecord(projectID uint, chapterDir, chapterDirName string) error {
+	chapterFile := filepath.Join(chapterDir, chapterDirName+".txt")
+	content, err := os.ReadFile(chapterFile)
+	if err != nil {
+		return err
+	}
+
+	title := buildChapterTitle(chapterDirName, string(content))
+	workflowParamsBytes, _ := json.Marshal(map[string]interface{}{
+		"source_dir":  chapterDir,
+		"chapter_dir": chapterDirName,
+		"synced_at":   time.Now().Format(time.RFC3339),
+	})
+
+	var chapter database.Chapter
+	queryErr := database.DB.Where("project_id = ? AND title = ?", projectID, title).First(&chapter).Error
+	if queryErr == nil {
+		return database.UpdateChapter(chapter.ID, map[string]interface{}{
+			"content":         string(content),
+			"workflow_params": string(workflowParamsBytes),
+		})
+	}
+
+	created, err := database.CreateChapter(projectID, title, string(content), "")
+	if err != nil {
+		return err
+	}
+
+	return database.UpdateChapter(created.ID, map[string]interface{}{
+		"workflow_params": string(workflowParamsBytes),
+	})
+}
+
+func buildChapterTitle(chapterDirName, content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+
+	return chapterDirName
 }
 
 // fileListHandler 返回指定目录中的文件列表
@@ -1322,7 +1197,7 @@ func (wp *WorkflowProcessor) getImageFilesFromDir(dir string) ([]string, error) 
 }
 
 func webServerMain() {
-	loadToolsList()
+	initializeMCPServer()
 
 	// 初始化全局广播服务
 	broadcast.GlobalBroadcastService = broadcast.NewBroadcastService()
@@ -1350,16 +1225,9 @@ func webServerMain() {
 	// 注册路由
 	r.GET("/", homePage)
 	r.GET("/ws", wsEndpoint)
-	r.GET("/api/tools", apiToolsHandler)
-	r.POST("/api/execute", apiExecuteHandler)
-	r.POST("/api/execute-all", apiExecuteAllHandler)
-	r.POST("/api/process-folder", apiProcessFolderHandler)
-	r.POST("/api/one-click-film", oneClickFilmHandler)
-	// 添加CapCut项目生成API端点
-	r.GET("/api/capcut-project", capcutProjectHandler)
 
-	// 提示词模板、工作流跟踪、系统检查与工作流运行等依赖 processor 的路由
-	registerProcessorBackedRoutes(r)
+	// workflow 主路由独立注册；提示词模板与参数跟踪按 processor 可用性降级
+	registerWorkflowSupportRoutes(r)
 
 	// 章节和场景管理相关路由
 	chapterSceneAPI := api_pkg.NewChapterSceneAPI()
@@ -1379,6 +1247,7 @@ func webServerMain() {
 	r.POST("/api/files/upload", fileUploadHandler)
 
 	// 添加设置API端点
+	r.GET("/api/settings", getSettingsHandler)
 	r.POST("/api/settings", settingsHandler)
 	// 添加调试API端点，用于检查全局变量
 	r.GET("/api/debug/global-style", debugGlobalStyleHandler)
@@ -1459,10 +1328,30 @@ type WorkflowProcessor struct {
 	ttsClient     *indextts2.IndexTTS2Client
 	aegisubGen    *aegisub.AegisubGenerator
 	drawThingsGen *drawthings.ChapterImageGenerator
+	comfyClient   *comfyui.Client
+	imageConfig   configpkg.ImageConfig
 }
 
 var GlobalStyle = drawthings.DefaultSuspenseStyle
 var AdditionalPrompt = ", " + drawthings.DefaultSuspenseStyle
+
+func (wp *WorkflowProcessor) imageBackendName() string {
+	if strings.EqualFold(wp.imageConfig.Provider, "comfyui") {
+		return "comfyui"
+	}
+	return "drawthings"
+}
+
+func (wp *WorkflowProcessor) renderImage(promptText, outputFile string, width, height int) error {
+	if strings.EqualFold(wp.imageConfig.Provider, "comfyui") {
+		if wp.comfyClient == nil {
+			return fmt.Errorf("comfyui client is not configured")
+		}
+		return wp.comfyClient.GenerateImage(promptText, wp.imageConfig.NegativePrompt, outputFile, width, height, wp.imageConfig.Steps, wp.imageConfig.CFGScale)
+	}
+
+	return wp.drawThingsGen.Client.GenerateImageFromTextWithDefaultTemplate(promptText, outputFile, width, height, false)
+}
 
 // generateImagesWithOllamaPrompts 使用Ollama优化的提示词生成图像
 func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir string, chapterID uint, audioDurationSecs int) error {
@@ -1517,30 +1406,25 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 				optimizedPrompt = paragraph + AdditionalPrompt
 			}
 
-			// 准备DrawThings请求参数
+			// 记录图像生成请求参数
 			drawThingsConfig := map[string]interface{}{
+				"backend":         wp.imageBackendName(),
 				"prompt":          optimizedPrompt,
-				"width":           512,
-				"height":          896,
-				"negative_prompt": ",人脸特写，半身像，模糊，比例失调，原参考图背景，比例失调，缺肢",
-				"steps":           8,
-				"sampler_name":    "DPM++ 2M Trailing",
-				"guidance_scale":  1.0,
+				"width":           wp.imageConfig.Width,
+				"height":          wp.imageConfig.Height,
+				"negative_prompt": wp.imageConfig.NegativePrompt,
+				"steps":           wp.imageConfig.Steps,
+				"guidance_scale":  wp.imageConfig.CFGScale,
 				"batch_size":      1,
-				"model":           "z_image_turbo_1.0_q6p.ckpt",
+				"model":           wp.imageConfig.DrawThings.Model,
+				"checkpoint":      wp.imageConfig.ComfyUI.Checkpoint,
 				"is_suspense":     true,
 			}
 			drawThingsConfigBytes, _ := json.Marshal(drawThingsConfig)
 
 			imageFile := filepath.Join(imagesDir, fmt.Sprintf("paragraph_%02d.png", idx+1))
 			wp.logger.Info(fmt.Sprintf("📸开始生成段落图像: %d", idx+1))
-			err = wp.drawThingsGen.Client.GenerateImageFromTextWithDefaultTemplate(
-				optimizedPrompt,
-				imageFile,
-				512,   // 缩小宽度
-				896,   // 缩小高度
-				false, // 风格已在提示词中处理
-			)
+			err = wp.renderImage(optimizedPrompt, imageFile, wp.imageConfig.Width, wp.imageConfig.Height)
 
 			drawThingsResult := map[string]interface{}{
 				"image_file": imageFile,
@@ -1637,29 +1521,24 @@ func (wp *WorkflowProcessor) generateImagesWithOllamaPrompts(content, imagesDir 
 	for idx, sceneDesc := range sceneDescriptions {
 		imageFile := filepath.Join(imagesDir, fmt.Sprintf("scene_%02d.png", idx+1))
 
-		// 准备DrawThings请求参数
+		// 记录图像生成请求参数
 		drawThingsConfig := map[string]interface{}{
+			"backend":         wp.imageBackendName(),
 			"prompt":          sceneDesc,
-			"width":           512,
-			"height":          896,
-			"negative_prompt": ",人脸特写，半身像，模糊，比例失调，原参考图背景，比例失调，缺肢",
-			"steps":           8,
-			"sampler_name":    "DPM++ 2M Trailing",
-			"guidance_scale":  1.0,
+			"width":           wp.imageConfig.Width,
+			"height":          wp.imageConfig.Height,
+			"negative_prompt": wp.imageConfig.NegativePrompt,
+			"steps":           wp.imageConfig.Steps,
+			"guidance_scale":  wp.imageConfig.CFGScale,
 			"batch_size":      1,
-			"model":           "z_image_turbo_1.0_q6p.ckpt",
+			"model":           wp.imageConfig.DrawThings.Model,
+			"checkpoint":      wp.imageConfig.ComfyUI.Checkpoint,
 			"is_suspense":     true,
 		}
 		drawThingsConfigBytes, _ := json.Marshal(drawThingsConfig)
 
 		// 使用分镜描述生成图像
-		err = wp.drawThingsGen.Client.GenerateImageFromTextWithDefaultTemplate(
-			sceneDesc,
-			imageFile,
-			512,   // 缩小宽度
-			896,   // 缩小高度
-			false, // 风格已在提示词中处理
-		)
+		err = wp.renderImage(sceneDesc, imageFile, wp.imageConfig.Width, wp.imageConfig.Height)
 
 		drawThingsResult := map[string]interface{}{
 			"image_file": imageFile,
@@ -1829,435 +1708,6 @@ func min(a, b int) int {
 	return b
 }
 
-// 一键出片功能 - 完整工作流处理
-func oneClickFilmHandler(c *gin.Context) {
-
-	var reqBody map[string]interface{}
-	err := json.NewDecoder(c.Request.Body).Decode(&reqBody)
-	if err != nil {
-		broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] 解析请求体失败: %v", err), broadcast.GetTimeStr())
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": fmt.Sprintf("解析请求失败: %v", err)})
-		return
-	}
-
-	// 获取提示词模板ID
-	var selectedTemplate *database.PromptTemplate
-	promptTemplateIDStr, ok := reqBody["prompt_template_id"].(string)
-	if ok && promptTemplateIDStr != "" {
-		// 将字符串ID转换为uint
-		promptTemplateID, err := strconv.ParseUint(promptTemplateIDStr, 10, 32)
-		if err != nil {
-			broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] 解析提示词模板ID失败: %v", err), broadcast.GetTimeStr())
-		} else {
-			// 从数据库获取模板
-			template, err := database.GetPromptTemplateByID(database.DB, uint(promptTemplateID))
-			if err != nil {
-				broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] 获取提示词模板失败: %v", err), broadcast.GetTimeStr())
-			} else {
-				selectedTemplate = template
-				// 更新全局风格变量
-				if selectedTemplate.StyleAddon != "" {
-					GlobalStyle = selectedTemplate.StyleAddon
-					AdditionalPrompt = ", " + selectedTemplate.StyleAddon
-				}
-				broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("🫧🛠[一键出片] 使用提示词模板: %s", selectedTemplate.Name), broadcast.GetTimeStr())
-			}
-		}
-	} else {
-		broadcast.GlobalBroadcastService.SendLog("movie", "[一键出片] 未选择特定提示词模板，使用默认风格", broadcast.GetTimeStr())
-	}
-
-	// 获取项目根目录
-	wd, err := os.Getwd()
-	if err != nil {
-		broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] 获取工作目录失败: %v", err), broadcast.GetTimeStr())
-		c.JSON(http.StatusOK, gin.H{"status": "error", "message": fmt.Sprintf("获取工作目录失败: %v", err)})
-		return
-	}
-
-	projectRoot := wd
-	if strings.HasSuffix(wd, "/cmd/web_server") {
-		projectRoot = filepath.Dir(filepath.Dir(wd)) // 回退两级到项目根目录
-	}
-
-	inputDir := filepath.Join(projectRoot, "input")
-	items, err := os.ReadDir(inputDir)
-	if err != nil {
-		broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 无法读取input目录: %v", err), broadcast.GetTimeStr())
-
-		c.JSON(http.StatusOK, gin.H{"status": "error", "message": fmt.Sprintf("无法读取input目录: %v", err)})
-		return
-	}
-
-	if len(items) == 0 {
-		broadcast.GlobalBroadcastService.SendLog("movie", "[一键出片] ❌ input目录为空，请在input目录下放置小说文本文件", broadcast.GetTimeStr())
-		c.JSON(http.StatusOK, gin.H{"status": "error", "message": "input目录为空，请在input目录下放置小说文本文件"})
-		return
-	}
-
-	if len(items) != 1 {
-		broadcast.GlobalBroadcastService.SendLog("movie", "[一键出片] ❌ input目录下有多个文件，请只放置一个小说目录", broadcast.GetTimeStr())
-		c.JSON(http.StatusOK, gin.H{"status": "error", "message": "input目录下有多个文件，请只放置一个小说文件"})
-		return
-	}
-	if !items[0].IsDir() {
-		broadcast.GlobalBroadcastService.SendLog("movie", "[一键出片] ❌ input目录下有文件，请只放置一个小说目录", broadcast.GetTimeStr())
-	}
-	novelDir := filepath.Join(inputDir, items[0].Name())
-
-	// 检查是否是 chapter_XX 格式的目录（即已经分割好的章节）
-	if isChapterDirectory(items[0].Name()) {
-		// 直接处理这个章节目录
-		processChapterDirectory(novelDir, items[0].Name(), projectRoot, c, broadcast.GlobalBroadcastService)
-	} else {
-		// 原有的处理逻辑：在小说目录中寻找对应的小说文件
-		novelFiles, err := os.ReadDir(novelDir)
-		if err != nil {
-			broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 无法读取小说目录 %s: %v", items[0].Name(), err), broadcast.GetTimeStr())
-		}
-		broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf(" 🔊 novelFiles 有几个: %d", len(novelFiles)), broadcast.GetTimeStr())
-
-		if len(novelFiles) == 0 {
-			broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 小说目录 %s 为空", items[0].Name()), broadcast.GetTimeStr())
-			return
-		}
-		if len(novelFiles) > 1 {
-			broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 小说目录 %s 中有多个文件，请手动处理", items[0].Name()), broadcast.GetTimeStr())
-			return
-		}
-		novelFile := novelFiles[0]
-		// 寻找与目录名匹配的.txt文件（例如 幽灵客栈/幽灵客栈.txt）
-		expectedFileName := items[0].Name() + ".txt"
-		if !novelFile.IsDir() && strings.EqualFold(novelFile.Name(), expectedFileName) {
-			broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf(" 🔊 是文本，且文本名字与目录名字相同: %s", items[0].Name()), broadcast.GetTimeStr())
-			absPath := filepath.Join(novelDir, novelFile.Name())
-			broadcast.GlobalBroadcastService.SendLog("movie", "[一键出片] 🧪 开始测试章节编号解析功能...", broadcast.GetTimeStr())
-
-			// 创建FileManager实例
-			fm := file.NewFileManager()
-			broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] 📖 处理小说文件: %s", novelFile.Name()), broadcast.GetTimeStr())
-
-			// 读取输入目录中的小说 - 这会生成chapter_XX目录
-			_, err = fm.CreateInputChapterStructure(absPath)
-			if err != nil {
-				broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 处理小说文件失败: %v", err), broadcast.GetTimeStr())
-
-				c.JSON(http.StatusOK, gin.H{"status": "error", "message": fmt.Sprintf("处理小说文件失败: %v", err)})
-				return
-			}
-			/* 1.=================== 创建输出目录结构=======================================*/
-
-			// 创建输出目录结构
-			fm.CreateOutputChapterStructure(inputDir)
-			broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[输出目录的名字] 📖 输出目录的名字: %v", inputDir), broadcast.GetTimeStr())
-
-			// 重新读取novelDir目录，查找chapter_XX子目录
-			newNovelFiles, err := os.ReadDir(novelDir)
-			if err != nil {
-				broadcast.GlobalBroadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 无法重新读取小说目录 %s: %v", items[0].Name(), err), broadcast.GetTimeStr())
-			}
-
-			// 遍历新创建的chapter_XX目录进行处理
-			for _, chapterFile := range newNovelFiles {
-				if chapterFile.IsDir() && isChapterDirectory(chapterFile.Name()) {
-					// 处理这个章节目录
-					chapterDirPath := filepath.Join(novelDir, chapterFile.Name())
-					processChapterDirectory(chapterDirPath, chapterFile.Name(), projectRoot, c, broadcast.GlobalBroadcastService)
-				}
-			}
-		}
-	}
-
-	broadcast.GlobalBroadcastService.SendLog("workflow", "🎉🎉🎉🎊🎊🎊✅ 一键出片完整工作流执行完成！", broadcast.GetTimeStr())
-	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "一键出片工作流执行完成"})
-	return
-}
-
-// processChapterDirectory 处理已分割的章节目录
-func processChapterDirectory(chapterDir, chapterName string, projectRoot string, c *gin.Context, broadcastService *broadcast.BroadcastService) {
-	// 提取章节号
-	re := regexp.MustCompile(`chapter_(\d+)`)
-	matches := re.FindStringSubmatch(chapterName)
-	if len(matches) < 2 {
-		broadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 无法从目录名提取章节号: %s", chapterName), broadcast.GetTimeStr())
-		return
-	}
-
-	chapterNum, err := strconv.Atoi(matches[1])
-	if err != nil {
-		broadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 章节号格式错误: %s", chapterName), broadcast.GetTimeStr())
-		return
-	}
-
-	// 查找章节文本文件
-	chapterTxtFile := filepath.Join(chapterDir, fmt.Sprintf("%s.txt", chapterName))
-	if _, err := os.Stat(chapterTxtFile); os.IsNotExist(err) {
-		broadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 章节文本文件不存在: %s", chapterTxtFile), broadcast.GetTimeStr())
-		return
-	}
-
-	// 读取章节内容
-	content, err := os.ReadFile(chapterTxtFile)
-	if err != nil {
-		broadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 读取章节文件失败: %v", err), broadcast.GetTimeStr())
-		return
-	}
-
-	// 获取项目名（父目录名）
-	projectName := filepath.Base(filepath.Dir(chapterDir))
-
-	// 创建logger：设置为Debug级别以显示所有日志
-	config := zap.NewDevelopmentConfig()
-	config.Level = zap.NewAtomicLevelAt(zap.DebugLevel) // 设置为Debug级别以显示所有日志
-	logger, err := config.Build()
-	if err != nil {
-		broadcastService.SendLog("movie", fmt.Sprintf("[一键出片] ❌ 创建logger失败: %v", err), broadcast.GetTimeStr())
-		c.JSON(http.StatusOK, gin.H{"status": "error", "message": fmt.Sprintf("创建logger失败: %v", err)})
-		return
-	}
-	defer logger.Sync()
-
-	// 初始化各组件
-	wp := &WorkflowProcessor{
-		logger:        logger,
-		fileManager:   file.NewFileManager(),
-		ttsClient:     indextts2.NewIndexTTS2Client(logger, "http://localhost:7860"),
-		aegisubGen:    aegisub.NewAegisubGenerator(),
-		drawThingsGen: drawthings.NewChapterImageGeneratorWithStyle(logger, database.DB, GlobalStyle), // 使用带自定义风格的构造函数
-	}
-
-	broadcastService.SendLog("movie", fmt.Sprintf("[一键出片] 🔊 处理章节:第%d章", chapterNum), broadcast.GetTimeStr())
-	outputDir := filepath.Join(projectRoot, "output", projectName)
-
-	audioFile := filepath.Join(outputDir, fmt.Sprintf("chapter_%02d", chapterNum), fmt.Sprintf("chapter_%02d.wav", chapterNum))
-
-	// 保存音频生成参数到数据库
-	chapterParams := map[string]interface{}{
-		"chapter_number":         chapterNum,
-		"chapter_title":          fmt.Sprintf("第%d章", chapterNum),
-		"chapter_content_length": len(content),
-		"audio_generation": map[string]interface{}{
-			"input_text":      string(content)[:min(len(string(content)), 1000)], // 只保存前1000个字符作为示例
-			"reference_audio": "./assets/ref_audio/ref.m4a",
-			"output_file":     audioFile,
-			"timestamp":       time.Now().Format(time.RFC3339),
-		},
-	}
-
-	// 使用参考音频文件
-	refAudioPath := filepath.Join(projectRoot, "assets", "ref_audio", "ref.m4a")
-	if _, err := os.Stat(refAudioPath); os.IsNotExist(err) {
-		broadcastService.SendLog("voice", "[一键出片] ⚠️  未找到参考音频文件，跳过音频生成", broadcast.GetTimeStr())
-	} else {
-		/* 3.=================== 发送文字到TTS生成音频文件 =======================================*/
-		err = wp.ttsClient.GenerateTTSWithAudio(refAudioPath, string(content), audioFile)
-		if err != nil {
-			broadcastService.SendLog("voice", fmt.Sprintf("[一键出片] ⚠️  音频生成失败: %v", err), broadcast.GetTimeStr())
-			c.JSON(http.StatusOK, gin.H{"status": "error", "message": fmt.Sprintf("音频生成失败: %v", err)})
-			return
-		}
-
-		// 音频生成成功
-		broadcastService.SendLog("voice", fmt.Sprintf("[一键出片] ✅ 音频生成完成: %s", audioFile), broadcast.GetTimeStr())
-
-		// 更新章节参数中的音频生成状态
-		if audioParams, ok := chapterParams["audio_generation"].(map[string]interface{}); ok {
-			audioParams["status"] = "completed"
-			audioParams["output_file"] = audioFile
-		}
-
-		// 无论成功还是失败都需要关闭连接
-		if wp.ttsClient.HTTPClient != nil {
-			wp.ttsClient.HTTPClient.CloseIdleConnections()
-		}
-	}
-
-	/* 4.=================== 生成台词/字幕保存srt文件 =======================================*/
-
-	// 步骤3: 生成台词/字幕
-	broadcastService.SendLog("aegisub", "[一键出片] 📜 步骤3 - 生成台词/字幕...", broadcast.GetTimeStr())
-
-	subtitleFile := filepath.Join(outputDir, fmt.Sprintf("chapter_%02d", chapterNum), fmt.Sprintf("chapter_%02d.srt", chapterNum))
-
-	if _, err := os.Stat(audioFile); err == nil {
-		// 如果音频文件存在，生成字幕
-		err = wp.aegisubGen.GenerateSubtitleFromIndextts2Audio(audioFile, string(content), subtitleFile)
-		if err != nil {
-			broadcastService.SendLog("aegisub", fmt.Sprintf("[一键出片] ⚠️  字幕生成失败: %v", err), broadcast.GetTimeStr())
-
-		} else {
-			broadcastService.SendLog("aegisub", fmt.Sprintf("[一键出片] ✅ 字幕生成完成: %s", subtitleFile), broadcast.GetTimeStr())
-
-		}
-	} else {
-		broadcastService.SendLog("aegisub", "[一键出片] ⚠️  由于音频文件不存在，跳过字幕生成", broadcast.GetTimeStr())
-
-	}
-	broadcastService.SendLog("drawthings", "[一键出片] 🎨 步骤4 - 生成图像...", broadcast.GetTimeStr())
-
-	// 步骤4: 生成图像
-	imagesDir := filepath.Join(outputDir, fmt.Sprintf("chapter_%02d", chapterNum))
-	if err := os.MkdirAll(imagesDir, 0755); err != nil {
-		broadcastService.SendLog("image", fmt.Sprintf("[一键出片] ❌ 创建图像目录失败: %v", err), broadcast.GetTimeStr())
-		c.JSON(http.StatusOK, gin.H{"status": "error", "message": fmt.Sprintf("创建图像目录失败: %v", err)})
-		return
-	}
-
-	// 查找或创建项目
-	var project database.Project
-	result := database.DB.Where("name = ?", projectName).First(&project)
-	if result.Error != nil {
-		// 如果项目不存在，创建新项目
-		project = database.Project{
-			Name:        projectName,
-			Description: fmt.Sprintf("项目%s的一键出片工作流", projectName),
-		}
-		database.DB.Create(&project)
-	}
-
-	// 更新或者创建章节
-	var tempChapter database.Chapter
-	result = database.DB.Where("project_id = ? AND number = ?", project.ID, chapterNum).First(&tempChapter)
-	if result.Error != nil {
-		tempChapter := database.Chapter{
-			Title:          fmt.Sprintf("第%d章", chapterNum),
-			Content:        string(content)[:min(len(string(content)), 1000)], // 只保存部分内容作为示例
-			ProjectID:      project.ID,
-			WorkflowParams: "{}", // 临时值
-		}
-		tempChapter.WorkflowParams = "{}"
-		database.DB.Save(&tempChapter)
-	} else {
-		newChapter := database.Chapter{
-			Title:          fmt.Sprintf("第%d章", chapterNum),
-			Content:        string(content)[:min(len(string(content)), 1000)], // 只保存部分内容作为示例
-			ProjectID:      project.ID,
-			WorkflowParams: "{}", // 临时值
-		}
-		database.DB.Create(&newChapter)
-	}
-
-	// 估算音频时长用于分镜生成
-	estimatedAudioDuration := 0
-	if _, statErr := os.Stat(audioFile); statErr == nil {
-		// 基于音频文件大小估算时长
-		if fileInfo, err := os.Stat(audioFile); err == nil {
-			fileSizeMB := float64(fileInfo.Size()) / (1024 * 1024)
-			// 假设平均 1MB ≈ 10秒音频
-			estimatedAudioDuration = int(fileSizeMB * 10)
-			if estimatedAudioDuration < 30 { // 最少30秒
-				estimatedAudioDuration = 30
-			}
-		}
-	} else {
-		// 如果没有音频文件，基于文本长度估算
-		estimatedAudioDuration = len(content) * 2 / 10 // 每个字符约0.2秒
-		if estimatedAudioDuration < 60 {               // 最少1分钟
-			estimatedAudioDuration = 60
-		}
-	}
-
-	// 使用Ollama优化的提示词生成图像
-	broadcastService.SendLog("image", fmt.Sprintf("[一键出片] 开始生成图像，章节ID: %d", tempChapter.ID), broadcast.GetTimeStr())
-	err = wp.generateImagesWithOllamaPrompts(string(content), imagesDir, tempChapter.ID, estimatedAudioDuration)
-	if err != nil {
-		broadcastService.SendLog("image", fmt.Sprintf("[一键出片] ⚠️  图像生成失败: %v", err), broadcast.GetTimeStr())
-	} else {
-		broadcastService.SendLog("image", fmt.Sprintf("[一键出片] ✅ 图像生成完成，保存在: %s", imagesDir), broadcast.GetTimeStr())
-
-		// 更新章节的图像路径
-		// 获取生成的图像文件列表
-		imageFiles, err := wp.getImageFilesFromDir(imagesDir)
-		if err == nil {
-			imageFilesJSON, _ := json.Marshal(imageFiles)
-			err = wp.updateChapterImages(tempChapter.ID, string(imageFilesJSON))
-			if err != nil {
-				wp.logger.Error("更新章节图像路径失败", zap.Uint("chapter_id", tempChapter.ID), zap.Error(err))
-			}
-		}
-	}
-}
-
-// capcutProjectHandler 生成剪映项目
-func capcutProjectHandler(c *gin.Context) {
-	chapterPath := c.Query("chapter_path")
-
-	if chapterPath == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing chapter_path parameter", "status": "error"})
-		return
-	}
-
-	// 获取项目根目录
-	wd, err := os.Getwd()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法获取当前工作目录", "status": "error"})
-		return
-	}
-
-	projectRoot := wd
-	if strings.HasSuffix(wd, "/cmd/web_server") {
-		projectRoot = filepath.Dir(filepath.Dir(wd)) // 回退两级到项目根目录
-	}
-
-	// 构建实际路径
-	var actualPath string
-	if strings.HasPrefix(chapterPath, "./") {
-		actualPath = filepath.Join(projectRoot, chapterPath[2:]) // 移除开头的"./"
-	} else {
-		actualPath = filepath.Join(projectRoot, chapterPath)
-	}
-
-	// 确保路径安全，防止路径遍历攻击
-	cleanPath := filepath.Clean(actualPath)
-
-	// 检查路径是否在允许的范围内
-	if !isAllowedProjectPath(cleanPath, projectRoot) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied", "status": "error"})
-		return
-	}
-
-	// 检查目录是否存在
-	if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Chapter directory does not exist", "status": "error"})
-		return
-	}
-
-	// 提取项目名称（从路径中提取小说名和章节号）
-	// 例如: /path/to/output/小说名/chapter_01 -> 小说名_第01章
-	relativePath, err := filepath.Rel(projectRoot, cleanPath)
-	if err != nil {
-		broadcast.GlobalBroadcastService.SendLog("capcut", fmt.Sprintf("[CapCut] 解析相对路径失败: %v", err), broadcast.GetTimeStr())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法解析路径", "status": "error"})
-		return
-	}
-
-	// 从路径中提取小说名和章节号
-	pathParts := strings.Split(relativePath, string(filepath.Separator))
-	var projectName string
-	if len(pathParts) >= 2 {
-		novelName := pathParts[len(pathParts)-2]   // 倒数第二部分是小说名
-		chapterName := pathParts[len(pathParts)-1] // 最后一部分是章节名
-		projectName = fmt.Sprintf("%s_%s", novelName, chapterName)
-	} else {
-		projectName = filepath.Base(cleanPath)
-	}
-
-	// 启动 goroutine 生成 CapCut 项目
-	go func() {
-		broadcast.GlobalBroadcastService.SendLog("capcut", fmt.Sprintf("[CapCut] 开始生成剪映项目，路径: %s, 项目名: %s", cleanPath, projectName), broadcast.GetTimeStr())
-
-		capcutGenerator := capcut.NewCapcutGenerator(nil) // 传递logger或nil
-		err := capcutGenerator.GenerateAndImportProject(cleanPath, projectName)
-		if err != nil {
-			broadcast.GlobalBroadcastService.SendLog("capcut", fmt.Sprintf("[CapCut] 生成失败: %v", err), broadcast.GetTimeStr())
-		} else {
-			broadcast.GlobalBroadcastService.SendLog("capcut", fmt.Sprintf("[CapCut] 项目生成并导入完成: %s", projectName), broadcast.GetTimeStr())
-		}
-	}()
-
-	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "CapCut project generation started"})
-}
-
 // isChapterDirectory 检查目录名是否为 chapter_XX 格式
 func isChapterDirectory(dirName string) bool {
 	matched, err := regexp.MatchString(`^chapter_\d+$`, dirName)
@@ -2268,6 +1718,67 @@ func isChapterDirectory(dirName string) bool {
 }
 
 // 设置处理函数
+func getSettingsHandler(c *gin.Context) {
+	cfg, err := loadWebConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": fmt.Sprintf("加载配置失败: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data": gin.H{
+			"general": gin.H{
+				"image_width":  cfg.Image.Width,
+				"image_height": cfg.Image.Height,
+			},
+			"tts": gin.H{
+				"provider":        cfg.TTS.Provider,
+				"reference_audio": cfg.Paths.ReferenceAudio,
+				"api_url":         cfg.TTS.IndexTTS2.APIURL,
+				"timeout_seconds": cfg.TTS.IndexTTS2.TimeoutSeconds,
+				"max_retries":     cfg.TTS.IndexTTS2.MaxRetries,
+				"voice_model":     cfg.TTS.VoiceModel,
+				"sample_rate":     cfg.TTS.SampleRate,
+				"python_path":     cfg.TTS.PythonPath,
+				"indextts_path":   cfg.TTS.IndexTTSPath,
+			},
+			"subtitle": gin.H{
+				"provider":        cfg.Subtitle.Provider,
+				"style":           cfg.Subtitle.Style,
+				"font_name":       cfg.Subtitle.FontName,
+				"font_size":       cfg.Subtitle.FontSize,
+				"script_path":     cfg.Subtitle.Aegisub.ScriptPath,
+				"executable_path": cfg.Subtitle.Aegisub.ExecutablePath,
+				"use_automation":  cfg.Subtitle.Aegisub.UseAutomation,
+			},
+			"project": gin.H{
+				"provider": cfg.Project.Provider,
+			},
+			"image": gin.H{
+				"provider":        cfg.Image.Provider,
+				"width":           cfg.Image.Width,
+				"height":          cfg.Image.Height,
+				"steps":           cfg.Image.Steps,
+				"cfg_scale":       cfg.Image.CFGScale,
+				"negative_prompt": cfg.Image.NegativePrompt,
+				"comfyui": gin.H{
+					"api_url":         cfg.Image.ComfyUI.APIURL,
+					"checkpoint":      cfg.Image.ComfyUI.Checkpoint,
+					"output_node_id":  cfg.Image.ComfyUI.OutputNodeID,
+					"filename_prefix": cfg.Image.ComfyUI.FilenamePrefix,
+				},
+			},
+			"ollama": gin.H{
+				"api_url":         cfg.Ollama.APIURL,
+				"model":           cfg.Ollama.Model,
+				"timeout_seconds": cfg.Ollama.TimeoutSeconds,
+			},
+			"image_provider": cfg.Image.Provider,
+		},
+	})
+}
+
 func settingsHandler(c *gin.Context) {
 	var reqBody map[string]interface{}
 	err := json.NewDecoder(c.Request.Body).Decode(&reqBody)
@@ -2359,18 +1870,248 @@ func settingsHandler(c *gin.Context) {
 		// 目前我们只返回成功响应，实际的设置处理可以根据需要扩展
 		// 将settingValue转换为map以备将来使用
 		if generalSettings, ok := settingValue.(map[string]interface{}); ok {
-			// 可以在这里处理各种通用设置
-			// 例如：图像尺寸、质量、线程数等
-			imageWidth, _ := generalSettings["image_width"]
-			imageHeight, _ := generalSettings["image_height"]
-			imageQuality, _ := generalSettings["image_quality"]
-			threadCount, _ := generalSettings["thread_count"]
-
-			// 在这里可以添加对这些设置的处理逻辑
-			fmt.Printf("通用设置已更新: Width=%v, Height=%v, Quality=%v, Threads=%v\n",
-				imageWidth, imageHeight, imageQuality, threadCount)
+			imageWidth, hasWidth := intFromSetting(generalSettings["image_width"])
+			imageHeight, hasHeight := intFromSetting(generalSettings["image_height"])
+			if hasWidth || hasHeight {
+				if err := updateConfigFile(func(cfgMap map[string]interface{}) error {
+					imageCfg := ensureConfigMap(cfgMap, "image")
+					if hasWidth {
+						imageCfg["width"] = imageWidth
+					}
+					if hasHeight {
+						imageCfg["height"] = imageHeight
+					}
+					return nil
+				}); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": fmt.Sprintf("保存通用设置失败: %v", err)})
+					return
+				}
+			}
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "success", "message": "通用设置已保存"})
+
+	case "ollama":
+		settingValue, exists := reqBody["setting_value"]
+		if !exists {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "缺少setting_value参数"})
+			return
+		}
+
+		ollamaSettings, ok := settingValue.(map[string]interface{})
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "setting_value必须是对象类型"})
+			return
+		}
+
+		apiURL := strings.TrimSpace(fmt.Sprint(ollamaSettings["api_url"]))
+		model := strings.TrimSpace(fmt.Sprint(ollamaSettings["model"]))
+		timeoutSeconds, ok := intFromSetting(ollamaSettings["timeout_seconds"])
+		if !ok {
+			timeoutSeconds = 120
+		}
+		if apiURL == "" || model == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "api_url 和 model 不能为空"})
+			return
+		}
+
+		if err := updateConfigFile(func(cfgMap map[string]interface{}) error {
+			ollamaCfg := ensureConfigMap(cfgMap, "ollama")
+			ollamaCfg["api_url"] = apiURL
+			ollamaCfg["model"] = model
+			ollamaCfg["timeout_seconds"] = timeoutSeconds
+			return nil
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": fmt.Sprintf("保存 Ollama 配置失败: %v", err)})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"status": "success", "message": "Ollama 配置已保存"})
+
+	case "tts":
+		settingValue, exists := reqBody["setting_value"]
+		if !exists {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "缺少setting_value参数"})
+			return
+		}
+		ttsSettings, ok := settingValue.(map[string]interface{})
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "setting_value必须是对象类型"})
+			return
+		}
+		provider := strings.TrimSpace(fmt.Sprint(ttsSettings["provider"]))
+		apiURL := strings.TrimSpace(fmt.Sprint(ttsSettings["api_url"]))
+		referenceAudio := strings.TrimSpace(fmt.Sprint(ttsSettings["reference_audio"]))
+		voiceModel := strings.TrimSpace(fmt.Sprint(ttsSettings["voice_model"]))
+		pythonPath := strings.TrimSpace(fmt.Sprint(ttsSettings["python_path"]))
+		indexTTSPath := strings.TrimSpace(fmt.Sprint(ttsSettings["indextts_path"]))
+		timeoutSeconds, ok := intFromSetting(ttsSettings["timeout_seconds"])
+		if !ok {
+			timeoutSeconds = 300
+		}
+		maxRetries, ok := intFromSetting(ttsSettings["max_retries"])
+		if !ok {
+			maxRetries = 3
+		}
+		sampleRate, ok := intFromSetting(ttsSettings["sample_rate"])
+		if !ok {
+			sampleRate = 24000
+		}
+		if provider == "" || apiURL == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "provider 和 api_url 不能为空"})
+			return
+		}
+		if err := updateConfigFile(func(cfgMap map[string]interface{}) error {
+			pathsCfg := ensureConfigMap(cfgMap, "paths")
+			ttsCfg := ensureConfigMap(cfgMap, "tts")
+			indexCfg := ensureConfigMap(ttsCfg, "indextts2")
+			pathsCfg["reference_audio"] = referenceAudio
+			ttsCfg["provider"] = provider
+			ttsCfg["voice_model"] = voiceModel
+			ttsCfg["python_path"] = pythonPath
+			ttsCfg["indextts_path"] = indexTTSPath
+			ttsCfg["sample_rate"] = sampleRate
+			indexCfg["api_url"] = apiURL
+			indexCfg["timeout_seconds"] = timeoutSeconds
+			indexCfg["max_retries"] = maxRetries
+			return nil
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": fmt.Sprintf("保存 TTS 配置失败: %v", err)})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "success", "message": "TTS 配置已保存"})
+
+	case "subtitle":
+		settingValue, exists := reqBody["setting_value"]
+		if !exists {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "缺少setting_value参数"})
+			return
+		}
+		subtitleSettings, ok := settingValue.(map[string]interface{})
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "setting_value必须是对象类型"})
+			return
+		}
+		provider := strings.TrimSpace(fmt.Sprint(subtitleSettings["provider"]))
+		style := strings.TrimSpace(fmt.Sprint(subtitleSettings["style"]))
+		fontName := strings.TrimSpace(fmt.Sprint(subtitleSettings["font_name"]))
+		scriptPath := strings.TrimSpace(fmt.Sprint(subtitleSettings["script_path"]))
+		executablePath := strings.TrimSpace(fmt.Sprint(subtitleSettings["executable_path"]))
+		fontSize, ok := intFromSetting(subtitleSettings["font_size"])
+		if !ok {
+			fontSize = 48
+		}
+		useAutomation, _ := subtitleSettings["use_automation"].(bool)
+		if provider == "" || scriptPath == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "provider 和 script_path 不能为空"})
+			return
+		}
+		if err := updateConfigFile(func(cfgMap map[string]interface{}) error {
+			subtitleCfg := ensureConfigMap(cfgMap, "subtitle")
+			aegisubCfg := ensureConfigMap(subtitleCfg, "aegisub")
+			subtitleCfg["provider"] = provider
+			subtitleCfg["style"] = style
+			subtitleCfg["font_name"] = fontName
+			subtitleCfg["font_size"] = fontSize
+			aegisubCfg["script_path"] = scriptPath
+			aegisubCfg["executable_path"] = executablePath
+			aegisubCfg["use_automation"] = useAutomation
+			return nil
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": fmt.Sprintf("保存字幕配置失败: %v", err)})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "success", "message": "字幕配置已保存"})
+
+	case "project":
+		settingValue, exists := reqBody["setting_value"]
+		if !exists {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "缺少setting_value参数"})
+			return
+		}
+		projectSettings, ok := settingValue.(map[string]interface{})
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "setting_value必须是对象类型"})
+			return
+		}
+		provider := strings.TrimSpace(fmt.Sprint(projectSettings["provider"]))
+		if provider == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "provider 不能为空"})
+			return
+		}
+		if err := updateConfigFile(func(cfgMap map[string]interface{}) error {
+			projectCfg := ensureConfigMap(cfgMap, "project")
+			projectCfg["provider"] = provider
+			return nil
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": fmt.Sprintf("保存成片配置失败: %v", err)})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "success", "message": "成片配置已保存"})
+
+	case "image":
+		settingValue, exists := reqBody["setting_value"]
+		if !exists {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "缺少setting_value参数"})
+			return
+		}
+		imageSettings, ok := settingValue.(map[string]interface{})
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "setting_value必须是对象类型"})
+			return
+		}
+		provider := strings.TrimSpace(fmt.Sprint(imageSettings["provider"]))
+		negativePrompt := strings.TrimSpace(fmt.Sprint(imageSettings["negative_prompt"]))
+		width, ok := intFromSetting(imageSettings["width"])
+		if !ok {
+			width = 512
+		}
+		height, ok := intFromSetting(imageSettings["height"])
+		if !ok {
+			height = 896
+		}
+		steps, ok := intFromSetting(imageSettings["steps"])
+		if !ok {
+			steps = 30
+		}
+		cfgScale := 7.5
+		switch v := imageSettings["cfg_scale"].(type) {
+		case float64:
+			cfgScale = v
+		case int:
+			cfgScale = float64(v)
+		case string:
+			if parsed, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+				cfgScale = parsed
+			}
+		}
+		comfySettings, _ := imageSettings["comfyui"].(map[string]interface{})
+		comfyAPIURL := strings.TrimSpace(fmt.Sprint(comfySettings["api_url"]))
+		comfyCheckpoint := strings.TrimSpace(fmt.Sprint(comfySettings["checkpoint"]))
+		comfyOutputNodeID := strings.TrimSpace(fmt.Sprint(comfySettings["output_node_id"]))
+		comfyFilenamePrefix := strings.TrimSpace(fmt.Sprint(comfySettings["filename_prefix"]))
+		if provider == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "image provider 不能为空"})
+			return
+		}
+		if err := updateConfigFile(func(cfgMap map[string]interface{}) error {
+			imageCfg := ensureConfigMap(cfgMap, "image")
+			comfyCfg := ensureConfigMap(imageCfg, "comfyui")
+			imageCfg["provider"] = provider
+			imageCfg["width"] = width
+			imageCfg["height"] = height
+			imageCfg["steps"] = steps
+			imageCfg["cfg_scale"] = cfgScale
+			imageCfg["negative_prompt"] = negativePrompt
+			comfyCfg["api_url"] = comfyAPIURL
+			comfyCfg["checkpoint"] = comfyCheckpoint
+			comfyCfg["output_node_id"] = comfyOutputNodeID
+			comfyCfg["filename_prefix"] = comfyFilenamePrefix
+			return nil
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": fmt.Sprintf("保存图像配置失败: %v", err)})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "success", "message": "图像配置已保存"})
 
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "未知的设置类型"})

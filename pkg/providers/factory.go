@@ -77,6 +77,8 @@ func buildImageProvider(cfg configpkg.Config, logger *zap.Logger) (ImageProvider
 		return MockImageProvider{baseDir: cfg.Paths.BaseDir}, nil
 	case "windows-drawthings":
 		return NewWindowsImageProvider(cfg.Paths.BaseDir, cfg.Image), nil
+	case "comfyui":
+		return NewComfyUIImageProvider(cfg.Paths.BaseDir, cfg.Image, logger), nil
 	case "drawthings":
 		return LegacyDrawThingsProvider{
 			baseDir: cfg.Paths.BaseDir,

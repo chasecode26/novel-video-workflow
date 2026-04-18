@@ -73,7 +73,7 @@ func TestExecutor_ReturnsCategorizedErrorOnProviderFailure(t *testing.T) {
 		Subtitle: stubSubtitleProvider{},
 		Image:    stubImageProvider{},
 		Project:  stubProjectProvider{},
-	}, NewMemoryRunStorage())
+	}, NewMemoryRunStorage(), "/tmp/base", "/tmp/ref.wav")
 	exec.SetChapterLoader(newMockChapterLoader())
 
 	_, err := exec.RunChapterWorkflow(context.Background(), RunRequest{ChapterID: 4})
@@ -116,7 +116,7 @@ func TestExecutor_PublishesFailureEventOnProviderFailure(t *testing.T) {
 		Subtitle: stubSubtitleProvider{},
 		Image:    stubImageProvider{},
 		Project:  stubProjectProvider{},
-	}, NewMemoryRunStorage())
+	}, NewMemoryRunStorage(), "/tmp/base", "/tmp/ref.wav")
 	exec.SetChapterLoader(newMockChapterLoader())
 	exec.SetEventPublisher(publisher)
 
@@ -140,7 +140,6 @@ func TestExecutor_PublishesFailureEventOnProviderFailure(t *testing.T) {
 	}
 }
 
-
 func newExecutorWithMocks(t *testing.T) *Executor {
 	t.Helper()
 	exec := NewExecutor(providers.ProviderBundle{
@@ -148,7 +147,7 @@ func newExecutorWithMocks(t *testing.T) *Executor {
 		Subtitle: stubSubtitleProvider{},
 		Image:    stubImageProvider{},
 		Project:  stubProjectProvider{},
-	}, NewMemoryRunStorage())
+	}, NewMemoryRunStorage(), "/tmp/base", "/tmp/ref.wav")
 	exec.SetChapterLoader(newMockChapterLoader())
 	return exec
 }
@@ -160,7 +159,7 @@ func newExecutorWithStore(t *testing.T, storage Storage) *Executor {
 		Subtitle: stubSubtitleProvider{},
 		Image:    stubImageProvider{},
 		Project:  stubProjectProvider{},
-	}, storage)
+	}, storage, "/tmp/base", "/tmp/ref.wav")
 	exec.SetChapterLoader(newMockChapterLoader())
 	return exec
 }
@@ -172,7 +171,7 @@ func newExecutorWithStoreAndPublisher(t *testing.T, storage Storage, pub EventPu
 		Subtitle: stubSubtitleProvider{},
 		Image:    stubImageProvider{},
 		Project:  stubProjectProvider{},
-	}, storage)
+	}, storage, "/tmp/base", "/tmp/ref.wav")
 	exec.SetChapterLoader(newMockChapterLoader())
 	exec.SetEventPublisher(pub)
 	return exec
@@ -185,7 +184,7 @@ func newExecutorWithMockTTSAndFailingSubtitle(t *testing.T, storage Storage) *Ex
 		Subtitle: failingSubtitleProvider{},
 		Image:    stubImageProvider{},
 		Project:  stubProjectProvider{},
-	}, storage)
+	}, storage, "/tmp/base", "/tmp/ref.wav")
 	exec.SetChapterLoader(newMockChapterLoader())
 	return exec
 }
@@ -197,7 +196,7 @@ func newExecutorWithMocksAndStore(t *testing.T, storage Storage) *Executor {
 		Subtitle: stubSubtitleProvider{},
 		Image:    stubImageProvider{},
 		Project:  stubProjectProvider{},
-	}, storage)
+	}, storage, "/tmp/base", "/tmp/ref.wav")
 	exec.SetChapterLoader(newMockChapterLoader())
 	return exec
 }
@@ -305,6 +304,7 @@ func (failingSubtitleProvider) HealthCheck() providers.HealthCheckResult {
 func (failingSubtitleProvider) Generate(req providers.SubtitleRequest) (providers.SubtitleResult, error) {
 	return providers.SubtitleResult{}, providers.NewProviderError(providers.CategoryExecutionError, "subtitle failed", nil)
 }
+
 // Capturing providers for verifying executor inputs
 type capturingTTSProvider struct {
 	lastReq providers.TTSRequest

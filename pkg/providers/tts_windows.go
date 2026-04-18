@@ -8,6 +8,9 @@ import (
 	"strings"
 
 	configpkg "novel-video-workflow/pkg/config"
+	"novel-video-workflow/pkg/tools/indextts2"
+
+	"go.uber.org/zap"
 )
 
 type windowsTTSGenerateFunc func(referenceAudio, text, outputPath string) error
@@ -19,11 +22,15 @@ type WindowsTTSProvider struct {
 }
 
 func NewWindowsTTSProvider(baseDir string, cfg configpkg.TTSConfig) WindowsTTSProvider {
-	return WindowsTTSProvider{
-		baseDir:      baseDir,
-		config:       cfg,
-		generateFunc: nil, // Will use IndexTTS2 client in future integration
+	provider := WindowsTTSProvider{
+		baseDir: baseDir,
+		config:  cfg,
 	}
+	client := indextts2.NewIndexTTS2Client(zap.NewNop(), cfg.IndexTTS2.APIURL)
+	provider.generateFunc = func(referenceAudio, text, outputPath string) error {
+		return client.GenerateTTSWithAudio(referenceAudio, text, outputPath)
+	}
+	return provider
 }
 
 func (p WindowsTTSProvider) Name() string { return "windows-indextts2" }

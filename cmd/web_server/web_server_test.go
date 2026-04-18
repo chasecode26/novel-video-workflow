@@ -41,7 +41,7 @@ func TestBuildWorkflowAPIs_WiresSystemAndRunAPIs(t *testing.T) {
 		t.Fatal("expected database path from config")
 	}
 
-	systemAPI, runAPI := buildWorkflowAPIs(bundle)
+	systemAPI, runAPI := buildWorkflowAPIs(cfg, bundle)
 	if systemAPI == nil {
 		t.Fatal("expected system check api")
 	}
@@ -106,7 +106,6 @@ func TestRegisterProcessorBackedRoutes_SkipsWhenProcessorIsNil(t *testing.T) {
 
 	assertRouteStatus(t, router, http.MethodGet, "/api/prompt-templates", http.StatusServiceUnavailable)
 	assertRouteStatus(t, router, http.MethodGet, "/api/workflow/chapter/1/params", http.StatusServiceUnavailable)
-	assertRouteStatus(t, router, http.MethodGet, "/api/system/check", http.StatusServiceUnavailable)
 }
 
 func TestRegisterProcessorBackedRoutes_RegistersWhenMCPServerIsAvailable(t *testing.T) {
@@ -139,10 +138,27 @@ func TestRegisterProcessorBackedRoutes_RegistersWhenMCPServerIsAvailable(t *test
 
 	assertRouteStatus(t, router, http.MethodGet, "/api/prompt-templates", http.StatusOK)
 	assertRouteStatus(t, router, http.MethodGet, "/api/workflow/chapter/not-a-number/params", http.StatusBadRequest)
-	assertRouteStatus(t, router, http.MethodGet, "/api/workflow/runs/not-a-number", http.StatusBadRequest)
-	assertRouteStatus(t, router, http.MethodGet, "/api/system/check", http.StatusOK)
+	assertRouteStatus(t, router, http.MethodGet, "/api/workflow/chapter/not-a-number/params", http.StatusBadRequest)
 
 	_ = bundle
+}
+
+func TestRegisterWorkflowRoutes_RegistersSystemAndRunEndpointsWithoutProcessor(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	cfg, bundle, _, err := loadAppComponents(filepath.Join("..", "..", "pkg", "config", "testdata", "config-minimal.yaml"))
+	if err != nil {
+		t.Fatalf("load app components: %v", err)
+	}
+
+	registered := registerWorkflowRoutes(router, cfg, bundle)
+	if !registered {
+		t.Fatal("expected workflow routes to register")
+	}
+
+	assertRouteStatus(t, router, http.MethodGet, "/api/system/check", http.StatusOK)
+	assertRouteStatus(t, router, http.MethodGet, "/api/workflow/runs/not-a-number", http.StatusBadRequest)
 }
 
 func TestFileContentHandler_AllowsInputPreviewWithRelativePath(t *testing.T) {

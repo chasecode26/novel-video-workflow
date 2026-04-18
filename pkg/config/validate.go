@@ -61,6 +61,13 @@ func ValidateConfig(cfg Config) error {
 		if strings.TrimSpace(cfg.Image.DrawThings.APIURL) == "" {
 			errs = append(errs, ValidationError{Field: "image.drawthings.api_url", Message: "is required when provider is drawthings or windows-drawthings"})
 		}
+	case "comfyui":
+		if strings.TrimSpace(cfg.Image.ComfyUI.APIURL) == "" {
+			errs = append(errs, ValidationError{Field: "image.comfyui.api_url", Message: "is required when provider is comfyui"})
+		}
+		if strings.TrimSpace(cfg.Image.ComfyUI.Checkpoint) == "" {
+			errs = append(errs, ValidationError{Field: "image.comfyui.checkpoint", Message: "is required when provider is comfyui"})
+		}
 	case "mock":
 	default:
 		errs = append(errs, ValidationError{Field: "image.provider", Message: "unsupported provider"})

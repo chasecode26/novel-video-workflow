@@ -101,7 +101,7 @@ func TestWorkflowRunAPI_StartsNewRunWithRealRunResource(t *testing.T) {
 		Subtitle: mockSubtitleProviderForRun{},
 		Image:    mockImageProviderForRun{},
 		Project:  mockProjectProviderForRun{},
-	}, storage)
+	}, storage, "/tmp/base", "/tmp/ref.wav")
 	api := NewWorkflowRunAPI(exec, storage)
 	api.RegisterRoutes(router)
 
@@ -153,7 +153,7 @@ func TestWorkflowRunAPI_ReusesExistingActiveRunForChapter(t *testing.T) {
 		Subtitle: mockSubtitleProviderForRun{},
 		Image:    mockImageProviderForRun{},
 		Project:  mockProjectProviderForRun{},
-	}, storage)
+	}, storage, "/tmp/base", "/tmp/ref.wav")
 	api := NewWorkflowRunAPI(exec, storage)
 	api.RegisterRoutes(router)
 
@@ -209,7 +209,7 @@ func TestWorkflowRunAPI_GetsRunByRunID(t *testing.T) {
 		Subtitle: mockSubtitleProviderForRun{},
 		Image:    mockImageProviderForRun{},
 		Project:  mockProjectProviderForRun{},
-	}, storage)
+	}, storage, "/tmp/base", "/tmp/ref.wav")
 	api := NewWorkflowRunAPI(exec, storage)
 	api.RegisterRoutes(router)
 
@@ -246,7 +246,7 @@ func TestWorkflowRunAPI_ReturnsNotFoundForMissingChapter(t *testing.T) {
 		Subtitle: mockSubtitleProviderForRun{},
 		Image:    mockImageProviderForRun{},
 		Project:  mockProjectProviderForRun{},
-	}, storage)
+	}, storage, "/tmp/base", "/tmp/ref.wav")
 	api := NewWorkflowRunAPI(exec, storage)
 	api.RegisterRoutes(router)
 
@@ -260,6 +260,7 @@ func TestWorkflowRunAPI_ReturnsNotFoundForMissingChapter(t *testing.T) {
 		t.Fatalf("expected status 404, got %d", w.Code)
 	}
 }
+
 type mockTTSProviderForSystemCheck struct{}
 
 func (mockTTSProviderForSystemCheck) Name() string { return "mock-tts" }

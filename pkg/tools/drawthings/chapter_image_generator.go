@@ -39,7 +39,7 @@ func NewChapterImageGenerator(logger *zap.Logger) *ChapterImageGenerator {
 // NewChapterImageGeneratorWithDB 创建带有数据库连接的章节图像生成器
 func NewChapterImageGeneratorWithDB(logger *zap.Logger, db *gorm.DB) *ChapterImageGenerator {
 	client := NewDrawThingsClient(logger, "http://localhost:7861")
-	ollamaClient := NewOllamaClient(logger, "http://localhost:11434", "qwen3:4b", db) // 使用默认Ollama配置
+	ollamaClient := NewOllamaClient(logger, "http://localhost:11434", "qwen3.5:9b", db) // 使用默认Ollama配置
 	return &ChapterImageGenerator{
 		Client:           client,
 		OllamaClient:     ollamaClient,

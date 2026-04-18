@@ -461,3 +461,180 @@ function refreshScenesList() {
         alert('请先选择一个章节');
     }
 }
+
+function loadChaptersList() {
+    fetch('/api/chapters')
+        .then(response => response.json())
+        .then(data => {
+            const chaptersListDiv = document.getElementById('chaptersList');
+            if (!chaptersListDiv) return;
+
+            chaptersListDiv.innerHTML = '';
+
+            if (data.chapters && data.chapters.length > 0) {
+                data.chapters.forEach(chapter => {
+                    const chapterId = chapter.id || chapter.ID;
+                    const displayTitle = (chapter.title || chapter.Title || '无标题').trim();
+                    const chapterCard = document.createElement('div');
+                    chapterCard.className = 'mb-2 cursor-pointer rounded-lg p-3 hover:bg-white hover:bg-opacity-20 transition-colors duration-150';
+                    chapterCard.innerHTML = '<div class="flex justify-between items-center">' +
+                        '<div>' +
+                            '<h4 class="font-medium text-white">' + displayTitle + '</h4>' +
+                            '<p class="text-xs text-gray-400">章节ID: ' + chapterId + '</p>' +
+                        '</div>' +
+                        '<button onclick="selectChapter(' + chapterId + ')" class="text-blue-300 hover:text-blue-100 text-sm">' +
+                            '<i class="fas fa-edit"></i>' +
+                        '</button>' +
+                    '</div>';
+                    chaptersListDiv.appendChild(chapterCard);
+                });
+            } else {
+                chaptersListDiv.innerHTML = '<p class="text-gray-400 text-center py-4">暂无章节</p>';
+            }
+        })
+        .catch(error => {
+            console.error('加载章节列表失败:', error);
+            const chaptersListDiv = document.getElementById('chaptersList');
+            if (chaptersListDiv) {
+                chaptersListDiv.innerHTML = '<p class="text-red-400 text-center py-4">加载章节列表失败</p>';
+            }
+        });
+}
+
+function selectChapter(chapterId) {
+    currentSelectedChapterId = chapterId;
+    loadScenesList(chapterId);
+
+    fetch('/api/chapters/' + chapterId)
+        .then(response => response.json())
+        .then(data => {
+            const chapter = data.chapter || data;
+            const displayTitle = (chapter.title || chapter.Title || '无标题').trim();
+            const selectedChapterTitle = document.getElementById('selectedChapterTitle');
+            if (selectedChapterTitle) {
+                selectedChapterTitle.textContent = ' - ' + displayTitle;
+            }
+        })
+        .catch(error => {
+            console.error('获取章节信息失败:', error);
+            const selectedChapterTitle = document.getElementById('selectedChapterTitle');
+            if (selectedChapterTitle) {
+                selectedChapterTitle.textContent = ' - 加载失败';
+            }
+        });
+}
+
+function loadScenesList(chapterId) {
+    fetch('/api/chapters/' + chapterId + '/scenes')
+        .then(response => response.json())
+        .then(data => {
+            const scenesListDiv = document.getElementById('scenesList');
+            if (!scenesListDiv) return;
+
+            scenesListDiv.innerHTML = '';
+
+            if (data.scenes && data.scenes.length > 0) {
+                data.scenes.forEach(scene => {
+                    const sceneId = scene.id || scene.ID;
+                    const imagePath = scene.image_url || scene.ImageURL || scene.image_path || scene.ImagePath || '';
+                    const displayOllamaResponse = (scene.ollama_response || scene.OllamaResponse || '无内容').trim();
+                    const retryCount = scene.retry_count || scene.RetryCount || 0;
+                    const status = scene.status || scene.Status || '未知';
+                    const normalizedImagePath = imagePath ? (imagePath.startsWith('/') ? imagePath : '/' + imagePath) : '';
+
+                    let thumbnailHtml = '<div class="w-16 h-16 bg-gray-700 rounded-lg flex items-center justify-center text-gray-400 text-xs">无图</div>';
+                    if (normalizedImagePath) {
+                        thumbnailHtml = '<img src="' + normalizedImagePath + '" alt="场景图片" class="w-16 h-16 object-cover rounded-lg" onerror="this.onerror=null; this.parentElement.innerHTML=\'<div class=&quot;w-16 h-16 bg-gray-700 rounded-lg flex items-center justify-center text-gray-400 text-xs&quot;>无图</div>\';">';
+                    }
+
+                    const sceneCard = document.createElement('div');
+                    sceneCard.className = 'mb-3 rounded-lg p-4 bg-black bg-opacity-20 border border-white border-opacity-20';
+                    sceneCard.innerHTML = '<div class="flex gap-4">' +
+                        '<div class="flex-shrink-0">' + thumbnailHtml + '</div>' +
+                        '<div class="flex-grow">' +
+                            '<div class="flex justify-between">' +
+                                '<h4 class="font-medium text-white">场景 ' + sceneId + '</h4>' +
+                                '<div class="flex gap-2">' +
+                                    '<button onclick="editScene(' + sceneId + ')" class="text-blue-300 hover:text-blue-100 text-sm" title="编辑"><i class="fas fa-edit"></i></button>' +
+                                    '<button onclick="retryScene(' + sceneId + ')" class="text-green-300 hover:text-green-100 text-sm" title="重试"><i class="fas fa-sync-alt"></i></button>' +
+                                    '<button onclick="deleteScene(' + sceneId + ')" class="text-red-300 hover:text-red-100 text-sm" title="删除"><i class="fas fa-trash"></i></button>' +
+                                '</div>' +
+                            '</div>' +
+                            '<p class="text-sm text-gray-300 mt-1 truncate">' + displayOllamaResponse + '</p>' +
+                            '<div class="mt-2 text-xs text-gray-400">' +
+                                '<p>重试次数: ' + retryCount + '</p>' +
+                                '<p>状态: ' + status + '</p>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>';
+                    scenesListDiv.appendChild(sceneCard);
+                });
+            } else {
+                scenesListDiv.innerHTML = '<p class="text-gray-400 text-center py-4">该章节下暂无场景</p>';
+            }
+        })
+        .catch(error => {
+            console.error('加载场景列表失败:', error);
+            const scenesListDiv = document.getElementById('scenesList');
+            if (scenesListDiv) {
+                scenesListDiv.innerHTML = '<p class="text-red-400 text-center py-4">加载场景列表失败</p>';
+            }
+        });
+}
+
+function editChapter(chapterId) {
+    fetch('/api/chapters/' + chapterId)
+        .then(response => response.json())
+        .then(data => {
+            const chapter = data.chapter || data;
+            const overlay = document.createElement('div');
+            overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+            overlay.id = 'modalOverlay';
+
+            const modal = document.createElement('div');
+            modal.className = 'glass-effect rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col border border-white border-opacity-30';
+
+            const header = document.createElement('div');
+            header.className = 'flex justify-between items-center p-6 border-b border-white border-opacity-30 rounded-t-2xl';
+            header.innerHTML = '<h3 class="text-xl font-bold text-white">编辑章节</h3>' +
+                '<button onclick="closeModal()" class="text-gray-300 hover:text-white text-3xl leading-none">' +
+                    '<i class="fas fa-times"></i>' +
+                '</button>';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'p-6 flex-grow overflow-auto';
+            contentDiv.innerHTML = '<div class="space-y-4">' +
+                '<div>' +
+                    '<label class="block text-sm font-medium text-gray-300 mb-2">章节标题</label>' +
+                    '<input type="text" id="chapterTitle" value="' + (chapter.title || chapter.Title || '') + '" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">' +
+                '</div>' +
+                '<div>' +
+                    '<label class="block text-sm font-medium text-gray-300 mb-2">章节内容</label>' +
+                    '<textarea id="chapterContent" rows="6" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">' + (chapter.content || chapter.Content || '') + '</textarea>' +
+                '</div>' +
+                '<div>' +
+                    '<label class="block text-sm font-medium text-gray-300 mb-2">分镜提示词</label>' +
+                    '<textarea id="segmentationPrompt" rows="4" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">' + (chapter.prompt || chapter.Prompt || '') + '</textarea>' +
+                '</div>' +
+                '<div>' +
+                    '<label class="block text-sm font-medium text-gray-300 mb-2">工作流参数</label>' +
+                    '<textarea id="workflowParams" rows="6" class="w-full px-4 py-3 bg-black bg-opacity-30 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">' + (chapter.workflow_params || chapter.WorkflowParams || '') + '</textarea>' +
+                '</div>' +
+            '</div>';
+
+            const footer = document.createElement('div');
+            footer.className = 'p-6 border-t border-white border-opacity-30 rounded-b-2xl flex justify-end gap-3';
+            footer.innerHTML = '<button onclick="closeModal()" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-lg transition-colors">取消</button>' +
+                '<button onclick="saveChapter(' + chapterId + ')" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg transition-colors">保存</button>';
+
+            modal.appendChild(header);
+            modal.appendChild(contentDiv);
+            modal.appendChild(footer);
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+        })
+        .catch(error => {
+            console.error('获取章节信息失败:', error);
+            alert('获取章节信息失败: ' + error.message);
+        });
+}

@@ -246,6 +246,205 @@ function loadSavedSettings() {
     }
 };
 
+async function loadServerSettings() {
+    const response = await fetch('/api/settings');
+    const payload = await response.json();
+    if (!response.ok || payload.status !== 'success' || !payload.data) {
+        throw new Error(payload.message || '加载配置失败');
+    }
+
+    const data = payload.data;
+    const general = data.general || {};
+    const tts = data.tts || {};
+    const subtitle = data.subtitle || {};
+    const project = data.project || {};
+    const ollama = data.ollama || {};
+
+    const imageWidthEl = document.getElementById('imageWidth');
+    const imageHeightEl = document.getElementById('imageHeight');
+    const ollamaApiUrlEl = document.getElementById('ollamaApiUrl');
+    const ollamaModelEl = document.getElementById('ollamaModel');
+    const ollamaTimeoutEl = document.getElementById('ollamaTimeoutSeconds');
+
+    if (imageWidthEl && general.image_width) imageWidthEl.value = general.image_width;
+    if (imageHeightEl && general.image_height) imageHeightEl.value = general.image_height;
+    const assignValue = (id, value) => {
+        const element = document.getElementById(id);
+        if (element && value !== undefined && value !== null && value !== '') {
+            element.value = value;
+        }
+    };
+    const assignChecked = (id, value) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.checked = !!value;
+        }
+    };
+    assignValue('ttsProvider', tts.provider);
+    assignValue('ttsApiUrl', tts.api_url);
+    assignValue('referenceAudio', tts.reference_audio);
+    assignValue('ttsVoiceModel', tts.voice_model);
+    assignValue('ttsTimeoutSeconds', tts.timeout_seconds);
+    assignValue('ttsMaxRetries', tts.max_retries);
+    assignValue('ttsSampleRate', tts.sample_rate);
+    assignValue('ttsPythonPath', tts.python_path);
+    assignValue('ttsIndexPath', tts.indextts_path);
+    assignValue('subtitleProvider', subtitle.provider);
+    assignValue('subtitleStyle', subtitle.style);
+    assignValue('subtitleFontName', subtitle.font_name);
+    assignValue('subtitleFontSize', subtitle.font_size);
+    assignValue('subtitleExecutablePath', subtitle.executable_path);
+    assignValue('subtitleScriptPath', subtitle.script_path);
+    assignChecked('subtitleUseAutomation', subtitle.use_automation);
+    assignValue('projectProvider', project.provider);
+    if (ollamaApiUrlEl && ollama.api_url) ollamaApiUrlEl.value = ollama.api_url;
+    if (ollamaModelEl && ollama.model) ollamaModelEl.value = ollama.model;
+    if (ollamaTimeoutEl && ollama.timeout_seconds) ollamaTimeoutEl.value = ollama.timeout_seconds;
+}
+
+function saveTtsSettings() {
+    fetch('/api/settings', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            setting_type: 'tts',
+            setting_value: {
+                provider: document.getElementById('ttsProvider')?.value?.trim(),
+                api_url: document.getElementById('ttsApiUrl')?.value?.trim(),
+                reference_audio: document.getElementById('referenceAudio')?.value?.trim(),
+                voice_model: document.getElementById('ttsVoiceModel')?.value?.trim(),
+                timeout_seconds: parseInt(document.getElementById('ttsTimeoutSeconds')?.value || '300', 10),
+                max_retries: parseInt(document.getElementById('ttsMaxRetries')?.value || '3', 10),
+                sample_rate: parseInt(document.getElementById('ttsSampleRate')?.value || '24000', 10),
+                python_path: document.getElementById('ttsPythonPath')?.value?.trim(),
+                indextts_path: document.getElementById('ttsIndexPath')?.value?.trim()
+            }
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert('TTS 配置已保存');
+        } else {
+            alert('保存 TTS 配置失败: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('保存 TTS 配置失败:', error);
+        alert('保存 TTS 配置失败: ' + error.message);
+    });
+}
+
+function saveSubtitleSettings() {
+    fetch('/api/settings', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            setting_type: 'subtitle',
+            setting_value: {
+                provider: document.getElementById('subtitleProvider')?.value?.trim(),
+                style: document.getElementById('subtitleStyle')?.value?.trim(),
+                font_name: document.getElementById('subtitleFontName')?.value?.trim(),
+                font_size: parseInt(document.getElementById('subtitleFontSize')?.value || '48', 10),
+                executable_path: document.getElementById('subtitleExecutablePath')?.value?.trim(),
+                script_path: document.getElementById('subtitleScriptPath')?.value?.trim(),
+                use_automation: !!document.getElementById('subtitleUseAutomation')?.checked
+            }
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert('字幕配置已保存');
+        } else {
+            alert('保存字幕配置失败: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('保存字幕配置失败:', error);
+        alert('保存字幕配置失败: ' + error.message);
+    });
+}
+
+function saveProjectSettings() {
+    fetch('/api/settings', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            setting_type: 'project',
+            setting_value: {
+                provider: document.getElementById('projectProvider')?.value?.trim()
+            }
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert('成片配置已保存');
+        } else {
+            alert('保存成片配置失败: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('保存成片配置失败:', error);
+        alert('保存成片配置失败: ' + error.message);
+    });
+}
+
+function saveOllamaSettings() {
+    const apiUrl = document.getElementById('ollamaApiUrl')?.value?.trim();
+    const model = document.getElementById('ollamaModel')?.value?.trim();
+    const timeoutSeconds = parseInt(document.getElementById('ollamaTimeoutSeconds')?.value || '120', 10);
+
+    if (!apiUrl || !model) {
+        alert('请填写完整的 Ollama 地址和模型名');
+        return;
+    }
+
+    fetch('/api/settings', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            setting_type: 'ollama',
+            setting_value: {
+                api_url: apiUrl,
+                model: model,
+                timeout_seconds: timeoutSeconds
+            }
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert('Ollama 配置已保存');
+        } else {
+            alert('保存 Ollama 配置失败: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('保存 Ollama 配置失败:', error);
+        alert('保存 Ollama 配置失败: ' + error.message);
+    });
+}
+
+const originalLoadSavedSettings = loadSavedSettings;
+loadSavedSettings = function() {
+    if (typeof originalLoadSavedSettings === 'function') {
+        originalLoadSavedSettings();
+    }
+    loadServerSettings().catch(error => {
+        console.error('加载服务器配置失败:', error);
+    });
+};
+
 // 加载风格模板
 function loadStyleTemplates() {
     fetch('/api/prompt-templates')
